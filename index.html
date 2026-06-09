@@ -27,27 +27,54 @@
     details summary { cursor: pointer; font-weight: bold; font-size: 0.95em; }
     details summary:hover { color: #666; }
     details .thought-body { margin-top: 8px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+    .header-text { flex: 1; }
+    .photo {
+      width: 110px; height: 110px; flex-shrink: 0;
+      border: 1px solid #ccc; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      color: #aaa; font-size: 0.8em; text-align: center;
+      background: #f5f5f5; overflow: hidden;
+    }
+    .photo img { width: 100%; height: 100%; object-fit: cover; }
+    .epigraph { color: #777; font-style: italic; font-size: 0.9em; margin: 6px 0 4px; }
+    .epigraph cite { font-style: normal; }
   </style>
 </head>
 <body>
 
-<h1>Fabian Hildesheim</h1>
-<p class="meta">
-  <a href="https://www.linkedin.com/in/fabian-hildesheim/">linkedin</a> &middot;
-  <a href="CV.pdf">cv</a>
-</p>
+<div class="header">
+  <div class="header-text">
+    <h1>Fabian Hildesheim</h1>
+    <p class="meta">
+      <a href="https://www.linkedin.com/in/fabian-hildesheim/">linkedin</a> &middot;
+      <a href="CV.pdf">cv</a>
+    </p>
+  </div>
+  <!-- Save your (upright) photo as profile.jpg in this folder and it will appear here. -->
+  <div class="photo"><img src="profile.jpg" alt="Fabian Hildesheim" onerror="this.style.display='none';this.parentNode.textContent='photo';"></div>
+</div>
 
 <h2>why this site</h2>
+<p class="epigraph">"Engagement is the key to understanding." — <cite>David Allen</cite></p>
 <p>
-  I recently moved to the US to do AI research at Stanford. I want to build a company. Writing in public creates accountability and forces nuance in articulation — I believe that sharpens thinking. So here we go.
+  Writing for a public audience creates greater accountability and forces me to articulate my thoughts more clearly than I do in personal Apple Notes. I am convinced this process sharpens thinking, also I really enjoy reading other people's blogs as it is a quite personal interface into the mind. So, there you go...
 </p>
 
 <h2>now</h2>
+<p class="epigraph">"You miss 100% of the shots you don't take." — <cite>Wayne Gretzky</cite></p>
 <p>
-  Visiting researcher at Stanford HAI, working on AI enterprise adoption with Prof. Brynjolfsson. Strong interest in foundational models, multi-agent systems, and AI adoption. More to come.
+  I recently wrapped up my research at Stanford HAI and I'm now on to a new adventure. More to come soon.
 </p>
 
-<h2>general beliefs</h2>
+<h2>personal background</h2>
+<p class="epigraph">"Think like a man of action, act like a man of thought." — <cite>Henri Bergson</cite></p>
+<p>
+  I grew up in Hamburg. Always loved sports and strategy games. For most of my youth I struggled in school — I was severely dyslexic, unfocused, and rebellious.
+</p>
+<p>
+  Through several key moments I turned things around, and got very competitive around rugby, combat sports, and intellectual challenges.
+</p>
 <p>
   I wrote a <a href="https://www.amazon.de/-/en/Das-Eigentor-Protestantischen-Ethik-protestantischen/dp/B084QL3131/">book on protestant ethics</a> when I was 17. Founded <a href="https://lupila-learns.org/">Lupila Learns</a>, an NGO supporting schools in Tanzania with educational infrastructure. Signed the <a href="https://www.givingwhatwecan.org/">Giving What We Can</a> pledge — 10% of all future earnings. Not because I feel perfectly aligned with the EA community, but because it's the best approximation for moral accountability I see right now.
 </p>
@@ -55,18 +82,21 @@
   Also I believe in bias to action and doc-writing.
 </p>
 
-<h2>foundational beliefs</h2>
-<p>
-  1. Everything is in constant transition, which is a contrast to our state-specific way of perceiving the world.
-</p>
-<p>
-  2. While it is more likely that there is no meaning in anything, we have no other option than acting as if there was one.
-</p>
-<p>
-  3. The best approximation to meaning for me seems to develop an actionable world model upon which one can make accurate predictions about fundamental relationships, improve my own openness and ability to act upon my beliefs, and with that to pursue happiness for the largest amount of people possible.
-</p>
-
 <h2>thoughts</h2>
+
+<details>
+  <summary>on China — june 2026</summary>
+  <div class="thought-body">
+    <p>Draft in progress.</p>
+  </div>
+</details>
+
+<details>
+  <summary>on Limitless Mind — april 2026</summary>
+  <div class="thought-body">
+    <p>Draft in progress.</p>
+  </div>
+</details>
 
 <details open>
   <summary>on AI adoption — march 2026</summary>
@@ -88,6 +118,36 @@
       <img src="2_openai_capability_overhang.png" alt="OpenAI Capability Overhang">
       <img src="humanity_graoh.png" alt="Humanity graph">
     </div>
+  </div>
+</details>
+
+<details>
+  <summary>on altruism — december 2025</summary>
+  <div class="thought-body">
+    <p>Draft in progress.</p>
+  </div>
+</details>
+
+<details>
+  <summary>on Africa — october 2024</summary>
+  <div class="thought-body">
+    <p>Draft in progress.</p>
+  </div>
+</details>
+
+<details>
+  <summary>foundational beliefs — august 2024</summary>
+  <div class="thought-body">
+    <p class="epigraph">"Change is not only always possible, but a requirement of history."</p>
+    <p>
+      1. Everything is in constant transition, which is a contrast to our state-specific way of perceiving the world.
+    </p>
+    <p>
+      2. While it is more likely that there is no meaning in anything, we have no other option than acting as if there was one.
+    </p>
+    <p>
+      3. The best approximation to meaning for me seems to develop an actionable world model upon which one can make accurate predictions about fundamental relationships, improve my own openness and ability to act upon my beliefs, and with that to pursue happiness for the largest amount of people possible.
+    </p>
   </div>
 </details>
 
