@@ -38,7 +38,6 @@
       position: relative;
     }
     .photo canvas { width: 100%; height: 100%; display: block; }
-    .photo img { display: none; }
     .epigraph {
       color: #777;
       font-style: italic;
@@ -63,7 +62,6 @@
   </div>
   <div class="photo" aria-label="Interactive dotted 3D visualization of Fabian Hildesheim">
     <canvas id="head-dots" width="240" height="240"></canvas>
-    <img id="head-source" src="head-3d.png" alt="">
   </div>
 </div>
 
@@ -222,8 +220,7 @@
 <script>
   (() => {
     const canvas = document.getElementById('head-dots');
-    const source = document.getElementById('head-source');
-    if (!canvas || !source) return;
+    if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     const size = 240;
@@ -231,32 +228,50 @@
     const pointer = { x: -999, y: -999, active: false };
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+    function inEllipse(x, y, cx, cy, rx, ry) {
+      const nx = (x - cx) / rx;
+      const ny = (y - cy) / ry;
+      return nx * nx + ny * ny <= 1;
+    }
+
+    function headTone(x, y) {
+      const head = inEllipse(x, y, 121, 95, 49, 62);
+      const neck = x > 96 && x < 145 && y > 136 && y < 180;
+      const shoulders = inEllipse(x, y, 121, 207, 86, 34);
+      const hair =
+        inEllipse(x, y, 118, 53, 56, 25) ||
+        inEllipse(x, y, 83, 72, 18, 32) ||
+        inEllipse(x, y, 155, 72, 20, 34);
+      const ears = inEllipse(x, y, 72, 101, 8, 18) || inEllipse(x, y, 169, 101, 8, 18);
+      const eyes = inEllipse(x, y, 102, 96, 5, 3) || inEllipse(x, y, 139, 96, 5, 3);
+      const brows = inEllipse(x, y, 102, 86, 13, 3) || inEllipse(x, y, 140, 86, 13, 3);
+      const nose = Math.abs(x - 121) < 4 && y > 96 && y < 124;
+      const mouth = inEllipse(x, y, 121, 137, 18, 4);
+      const jaw = inEllipse(x, y, 121, 139, 36, 25);
+      const cheekShadow = inEllipse(x, y, 91, 118, 12, 27) || inEllipse(x, y, 151, 118, 12, 27);
+
+      if (eyes || brows || nose || mouth) return 0.98;
+      if (hair) return 0.86;
+      if (cheekShadow || jaw) return 0.54;
+      if (head || ears) return 0.42;
+      if (neck) return 0.36;
+      if (shoulders) return 0.22;
+      return 0;
+    }
+
     function buildDots() {
-      const sampler = document.createElement('canvas');
-      sampler.width = size;
-      sampler.height = size;
-      const sampleCtx = sampler.getContext('2d', { willReadFrequently: true });
-      sampleCtx.drawImage(source, 0, 0, size, size);
-      const data = sampleCtx.getImageData(0, 0, size, size).data;
-
       dots.length = 0;
-      for (let y = 12; y < size - 10; y += 7) {
-        for (let x = 12; x < size - 10; x += 7) {
-          const idx = (y * size + x) * 4;
-          const r = data[idx];
-          const g = data[idx + 1];
-          const b = data[idx + 2];
-          const alpha = data[idx + 3];
-          const brightness = (r + g + b) / 3;
-          const contrast = 1 - brightness / 255;
+      for (let y = 20; y < size - 12; y += 7) {
+        for (let x = 18; x < size - 18; x += 7) {
+          const tone = headTone(x, y);
 
-          if (alpha > 20 && brightness < 238 && Math.random() < contrast * 1.45) {
+          if (tone && Math.random() < 0.2 + tone * 0.85) {
             dots.push({
-              x,
-              y,
+              x: x + (Math.random() - 0.5) * 2.4,
+              y: y + (Math.random() - 0.5) * 2.4,
               jitter: Math.random() * Math.PI * 2,
-              radius: 0.55 + contrast * 1.25,
-              opacity: 0.18 + contrast * 0.72
+              radius: 0.55 + tone * 1.05,
+              opacity: 0.2 + tone * 0.65
             });
           }
         }
@@ -298,16 +313,12 @@
       pointer.active = true;
     }
 
-    source.addEventListener('load', buildDots);
-    source.addEventListener('error', () => {
-      canvas.replaceWith(document.createTextNode('photo'));
-    });
     canvas.addEventListener('mousemove', setPointer);
     canvas.addEventListener('touchmove', setPointer, { passive: true });
     canvas.addEventListener('mouseleave', () => { pointer.active = false; });
     canvas.addEventListener('touchend', () => { pointer.active = false; });
 
-    if (source.complete) buildDots();
+    buildDots();
   })();
 </script>
 
