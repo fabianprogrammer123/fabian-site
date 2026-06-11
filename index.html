@@ -34,7 +34,7 @@
       border: none; border-radius: 0;
       display: flex; align-items: center; justify-content: center;
       color: #aaa; font-size: 0.8em; text-align: center;
-      background: #fff; overflow: hidden;
+      background: #fff; overflow: visible;
       position: relative; cursor: pointer;
     }
     .photo:focus-visible { outline: 1px solid #999; outline-offset: 4px; }
@@ -42,6 +42,39 @@
     .photo.voice-loading canvas { opacity: 0.55; }
     .photo.voice-active canvas { opacity: 0.9; }
     .photo.voice-speaking canvas { filter: contrast(1.2); }
+    .voice-bubble {
+      position: absolute;
+      right: -46px;
+      top: 62px;
+      max-width: 92px;
+      padding: 5px 7px;
+      border: 1px solid #222;
+      border-radius: 3px;
+      background: #fff;
+      color: #222;
+      font-size: 0.75em;
+      line-height: 1.25;
+      text-align: left;
+      box-shadow: 2px 2px 0 #ddd;
+      pointer-events: none;
+      transform: rotate(-2deg);
+      z-index: 2;
+    }
+    .voice-bubble::before {
+      content: "";
+      position: absolute;
+      left: -6px;
+      top: 14px;
+      width: 9px;
+      height: 9px;
+      background: #fff;
+      border-left: 1px solid #222;
+      border-bottom: 1px solid #222;
+      transform: rotate(45deg);
+    }
+    .photo.voice-loading .voice-bubble { color: #777; border-color: #aaa; }
+    .photo.voice-active .voice-bubble,
+    .photo.voice-speaking .voice-bubble { box-shadow: 2px 2px 0 #bbb; }
     .epigraph {
       color: #777;
       font-style: italic;
@@ -66,6 +99,7 @@
   </div>
   <div class="photo" role="button" tabindex="0" aria-label="Start Fabian's voice agent">
     <canvas id="head-dots" width="240" height="240"></canvas>
+    <span class="voice-bubble">Click me!</span>
   </div>
 </div>
 
@@ -227,7 +261,8 @@
     const CLIENT_SRC = 'https://esm.sh/@elevenlabs/client';
     const avatar = document.querySelector('.photo');
     const canvas = document.getElementById('head-dots');
-    if (!avatar || !canvas) return;
+    const bubble = avatar && avatar.querySelector('.voice-bubble');
+    if (!avatar || !canvas || !bubble) return;
 
     const ctx = canvas.getContext('2d');
     const size = 240;
@@ -236,6 +271,10 @@
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let conversation = null;
     let isStartingConversation = false;
+
+    function setBubble(text) {
+      bubble.textContent = text;
+    }
 
     function draw(time = 0) {
       ctx.clearRect(0, 0, size, size);
@@ -278,15 +317,16 @@
         conversation = null;
         avatar.classList.remove('voice-active', 'voice-speaking');
         avatar.setAttribute('aria-label', "Start Fabian's voice agent");
+        setBubble('Click me!');
         return;
       }
 
       isStartingConversation = true;
       avatar.classList.add('voice-loading');
       avatar.setAttribute('aria-label', "Connecting to Fabian's voice agent");
+      setBubble('one sec...');
 
       try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
         const { Conversation } = await import(CLIENT_SRC);
 
         conversation = await Conversation.startSession({
@@ -296,11 +336,13 @@
             avatar.classList.remove('voice-loading');
             avatar.classList.add('voice-active');
             avatar.setAttribute('aria-label', "End Fabian's voice agent");
+            setBubble('click to make me shut up');
           },
           onDisconnect: () => {
             conversation = null;
             avatar.classList.remove('voice-loading', 'voice-active', 'voice-speaking');
             avatar.setAttribute('aria-label', "Start Fabian's voice agent");
+            setBubble('Click me!');
           },
           onModeChange: (mode) => {
             avatar.classList.toggle('voice-speaking', mode.mode === 'speaking');
@@ -309,12 +351,14 @@
             console.error('ElevenLabs conversation error:', error);
             avatar.classList.remove('voice-loading', 'voice-active', 'voice-speaking');
             avatar.setAttribute('aria-label', "Start Fabian's voice agent");
+            setBubble('Click me!');
           }
         });
       } catch (error) {
         console.error('Failed to start ElevenLabs conversation:', error);
         avatar.classList.remove('voice-loading', 'voice-active', 'voice-speaking');
         avatar.setAttribute('aria-label', "Start Fabian's voice agent");
+        setBubble('Click me!');
       } finally {
         isStartingConversation = false;
       }
