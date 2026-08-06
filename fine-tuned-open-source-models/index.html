@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <meta name="description" content="A case for task-trained open-source models that outperform frontier models on specialized business workflows.">
+  <title>The Rise of Intelligence Ownership | Fabian Hildesheim</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #222;
+      --muted: #666;
+      --faint: #999;
+      --rule: #ccc;
+      --soft-rule: #e3e3e3;
+      --paper: #fff;
+      --panel: #f7f7f7;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    a:hover { color: var(--muted); }
+
+    a:focus-visible {
+      outline: 1px solid var(--ink);
+      outline-offset: 4px;
+    }
+
+    .site-shell {
+      width: min(100%, 1040px);
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 44px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .article-header {
+      width: min(100%, 760px);
+      margin: 0 auto 48px;
+    }
+
+    h1 {
+      max-width: 720px;
+      margin: 0 0 14px;
+      font-size: clamp(1.85rem, 4.4vw, 2.75rem);
+      line-height: 1.12;
+      letter-spacing: -0.035em;
+    }
+
+    .subtitle {
+      max-width: 660px;
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .byline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px 9px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+
+    .byline .date {
+      flex-basis: 100%;
+      margin-top: 4px;
+      color: var(--faint);
+    }
+
+    article > .col,
+    article .col {
+      width: min(100%, 660px);
+      margin-right: auto;
+      margin-left: auto;
+    }
+
+    article > .wide,
+    article .wide {
+      width: min(100%, 980px);
+      margin: 48px auto;
+    }
+
+    article section { margin: 42px 0; }
+
+    article h2 {
+      margin: 6px 0 20px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--rule);
+      font-size: 1.25rem;
+      line-height: 1.35;
+    }
+
+    article h3 {
+      margin: 28px 0 12px;
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+
+    article p {
+      margin: 0 0 18px;
+      font-size: 0.95rem;
+    }
+
+    article ul,
+    article ol {
+      margin: 0 0 22px;
+      padding-left: 24px;
+      font-size: 0.93rem;
+    }
+
+    article li { margin: 8px 0; }
+
+    .kicker,
+    .tldr-label {
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: bold;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .lede {
+      color: #333;
+      font-size: 1.02rem;
+      line-height: 1.75;
+    }
+
+    .problems {
+      margin-top: 30px;
+      border-top: 1px solid var(--soft-rule);
+    }
+
+    .problem {
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 10px;
+      padding: 20px 0 4px;
+      border-bottom: 1px solid var(--soft-rule);
+    }
+
+    .problem .num {
+      grid-row: 1 / span 2;
+      color: var(--faint);
+      font-size: 0.8rem;
+    }
+
+    .problem h3 { margin: -4px 0 8px; }
+
+    .tldr {
+      margin: 34px 0;
+      border: 1px solid var(--rule);
+    }
+
+    .tldr-label {
+      margin: 0;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .tldr-row {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 18px;
+      padding: 18px 14px;
+      border-bottom: 1px solid var(--soft-rule);
+    }
+
+    .tldr-row:last-child { border-bottom: 0; }
+
+    .tldr-num {
+      font-size: 1.25rem;
+      font-weight: bold;
+      line-height: 1.35;
+    }
+
+    .tldr-row p { margin: 0; }
+
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      margin: 28px 0;
+      border-top: 1px solid var(--rule);
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .stat {
+      padding: 18px 14px;
+      border-right: 1px solid var(--rule);
+    }
+
+    .stat:last-child { border-right: 0; }
+
+    .stat strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 1.25rem;
+    }
+
+    .article-figure { margin: 54px auto; }
+
+    .figure-title {
+      margin-bottom: 12px;
+      font-size: 0.9rem;
+      font-weight: bold;
+    }
+
+    .article-figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--soft-rule);
+      background: #fff;
+    }
+
+    .article-figure figcaption {
+      max-width: 760px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.6;
+    }
+
+    .checklist {
+      margin: 28px 0;
+      padding: 20px 22px 14px;
+      border: 1px solid var(--rule);
+      background: var(--panel);
+    }
+
+    .checklist h3 { margin-top: 0; }
+
+    .checklist-note {
+      padding-top: 14px;
+      border-top: 1px solid var(--soft-rule);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .model-link {
+      width: min(100%, 660px);
+      margin: 24px auto 52px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .appendix {
+      padding-top: 12px;
+      border-top: 1px solid var(--ink);
+    }
+
+    .appendix-intro { max-width: 660px; }
+
+    .tbl-wrap {
+      width: 100%;
+      margin: 26px 0 48px;
+      overflow-x: auto;
+      border: 1px solid var(--rule);
+    }
+
+    table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    th,
+    td {
+      padding: 12px;
+      border-right: 1px solid var(--soft-rule);
+      border-bottom: 1px solid var(--soft-rule);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--panel);
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    th:last-child,
+    td:last-child { border-right: 0; }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .footnotes {
+      padding-top: 8px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .footnotes h3 {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .footnotes ol {
+      padding-left: 22px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.6;
+    }
+
+    .footnotes li { margin: 9px 0; }
+
+    .page-end {
+      width: min(100%, 660px);
+      margin: 56px auto 0;
+      padding-top: 22px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .page-end p {
+      margin: 18px 0 0;
+      color: var(--faint);
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 700px) {
+      .site-shell { padding-top: 22px; }
+      .back-link { margin-bottom: 34px; }
+      .article-header { margin-bottom: 36px; }
+
+      article > .wide,
+      article .wide { margin: 38px auto; }
+
+      .problem {
+        grid-template-columns: 32px 1fr;
+        gap: 8px;
+      }
+
+      .tldr-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .stat-row { grid-template-columns: 1fr; }
+
+      .stat {
+        border-right: 0;
+        border-bottom: 1px solid var(--rule);
+      }
+
+      .stat:last-child { border-bottom: 0; }
+      .article-figure { margin: 42px auto; }
+
+      .article-figure img {
+        width: calc(100% + 16px);
+        max-width: none;
+        margin-left: -8px;
+      }
+
+      .checklist { padding: 18px 16px 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="site-shell">
+    <a class="back-link" href="../">&larr; back to home</a>
+
+    <header class="article-header">
+      <h1>The Rise of Intelligence Ownership</h1>
+      <p class="subtitle">What is the common denominator among companies succeeding with AI-first strategies?</p>
+      <p class="byline">
+        <a href="https://www.linkedin.com/in/justinz/">Justinas Zaliaduonis</a>
+        <span>&middot;</span>
+        <a href="https://www.linkedin.com/in/jorisbenjaminaszilinskis/">Joris Zilinskis</a>
+        <span>&middot;</span>
+        <a href="https://www.linkedin.com/in/fabian-hildesheim/">Fabian Hildesheim</a>
+        <span>&middot;</span>
+        <a href="https://www.linkedin.com/in/joel-hainzl/">Joel Hainzl</a>
+        <span>&middot;</span>
+        <a href="https://www.linkedin.com/in/gediminaspazera/">Gediminas Pazera</a>
+        <span class="date">July 27, 2026</span>
+      </p>
+    </header>
+
+    <article>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-hero"><p class="figure-title">Cost vs. quality on catalog integrity</p><img src="assets/fig-hero.png" alt="Cost and quality comparison for the trained 9B model and frontier model configurations on catalog integrity." loading="lazy"><figcaption>The article in one picture: on the same catalog-review workflow, with the same tools,
+        images, and scorer, our GRPO fine-tune of a 9B open-source model (pink) beats every
+        frontier configuration we tested, at $0.50 per 1,000 listings: 40× cheaper than
+        the least expensive frontier setup and ~340× cheaper than the most expensive.</figcaption></figure>
+  </div>
+
+
+  <div class="col">
+
+    <section id="how-we-got-here">
+      <p class="kicker">Part I</p>
+      <h2>Everyone asked the same question</h2>
+      <p class="lede">
+        Since ChatGPT launched in 2022, business leaders have been asking the same question:
+        <em>what can AI do for us?</em> The answer began with low-risk tasks: summarizing
+        documents, drafting emails, producing first drafts that a human would edit.
+      </p>
+      <p>
+        It quickly moved into higher-value cognitive work, such as software development and
+        content generation, and grew into more ambitious projects, like attempts to build an AI <a href="https://www.sentra.app/articles/what-is-a-company-brain">company brain</a>,
+        a system connected to internal knowledge, data, and tools that could coordinate work
+        and eventually operate parts of the business autonomously.
+      </p>
+      <p>
+        While a lot of time, energy and tokens have been invested in AI adoption, measurable
+        outcomes have barely been achieved at scale. However, some companies
+        embraced being AI-first and saw enormous gains in productivity, revenue, and cost,
+        while others lagged behind or failed to change their organizations enough to reach
+        high ROI.
+      </p>
+      <p>
+        <a href="https://x.com/eglyman/status/2036477278394138772">Recent data</a> from corporate expense management platform Ramp reveals a stark contrast in
+        performance: the top quartile of companies investing in AI saw their revenue more than
+        double between November 2022 and December 2025, while businesses with zero AI
+        expenditure experienced a mere 15% increase.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+  <figure class="article-figure" id="fig-divide"><p class="figure-title">Top AI adopters outperform across industries</p><img src="assets/fig-divide.png" alt="Revenue growth from November 2022 to December 2025 for top-quartile AI spenders and businesses with zero AI spend." loading="lazy"><figcaption>Same three years, same economy: in <a href="https://x.com/eglyman/status/2036477278394138772">Ramp's data</a> across its customer base, the heaviest AI
+      adopters more than doubled revenue while businesses spending nothing on AI grew about
+      15% (indexed, Nov 2022 = 100; curve drawn from
+      the reported endpoints). The rest of this article is about what the AI-heavy group
+      actually did.</figcaption></figure>
+</div>
+
+  <div class="col">
+    <section id="mixed-results-2">
+      <p>
+        There are many reasons why AI has done wonders for some companies while others have struggled to see the return on their investment, but <a href="https://mlq.ai/media/quarterly_decks/v0.1_State_of_AI_in_Business_2025_Report.pdf">research</a> primarily points in five directions.
+      </p>
+
+      <div class="problems">
+        <div class="problem"><span class="num">01</span><div>
+          <h4>Redesign the process, not just the task</h4>
+          <p>Becoming AI-first means rethinking how the work is structured, not dropping a model into a workflow built around people: what gets approved, who reviews what, and which handoffs still need a human. Where the process stays untouched, legacy bottlenecks absorb the productivity gains before they reach the P&amp;L. In McKinsey's 2025 survey of organizations using gen AI, workflow redesign was the attribute <a href="https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai-how-organizations-are-rewiring-to-capture-value">most correlated with EBIT impact</a>, and only 21% of them had redesigned any workflow at all.</p>
+        </div></div>
+        <div class="problem"><span class="num">02</span><div>
+          <h4>Incentivize experimentation</h4>
+          <p>Models, tooling and best practices change weekly, so last quarter's setup is rarely still the right one. That only gets picked up if people are rewarded for trying things and reporting what failed, not just for shipping. Technical teams are the natural place to start, since they see the same problems recur across functions and can tell which of them a model can actually take over.</p>
+        </div></div>
+        <div class="problem"><span class="num">03</span><div>
+          <h4>Provide tailored business context</h4>
+          <p>Prompt engineering and retrieval can inject business context at call time, but doing it well is its own engineering program: getting to the data, enforcing access controls on what each request may see, building retrieval that surfaces the right evidence, and <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">managing a context window</a> that models <a href="https://arxiv.org/abs/2307.03172">use unevenly as it grows</a>.</p>
+        </div></div>
+        <div class="problem"><span class="num">04</span><div>
+          <h4>Measure usage and impact</h4>
+          <p>Every AI line item eventually meets the CFO question: what did this change, and was it worth it? In most deployments, nobody can answer it: there is no infrastructure to track the model's performance, decision costs, or impact on efficiency, and <a href="https://metr.org/blog/2026-05-11-ai-usage-survey/">self-reported time savings are often inaccurate</a>. Without a scored evaluation on your own data, a "vibe evaluation" is the ceiling of what you can claim, and a hard budget to defend.</p>
+        </div></div>
+        <div class="problem"><span class="num">05</span><div>
+          <h4>Set clear business goals within the AI budget</h4>
+          <p>AI brought a pricing model most companies were not used to. Paying per token instead of per seat makes costs scale with usage, which makes it hard to lay out a cost plan or estimate the capital efficiency gains for internal workloads. <a href="https://fortune.com/2026/05/26/uber-coo-ai-spending-tokens-claude-code/">Uber went through its annual engineering budget in four months</a>, and <a href="https://www.buildmvpfast.com/blog/microsoft-cancels-claude-code-licenses-ai-cost-engineer-2026">Microsoft cancelled most of its Claude licenses</a> to bring costs back under control. Today's prices also understate the problem, since most AI labs are <a href="https://www.wsj.com/tech/ai/ai-giants-are-handing-out-tons-of-free-computing-power-to-grab-startup-share-c00a5c5c">subsidizing token costs to capture market share</a>, and frontier model prices are expected to rise.</p>
+        </div></div>
+      </div>
+      <p>
+        In this article we give a detailed overview of the deployment technique the winning group keeps converging on: fine-tuning open-source models with reinforcement learning.
+        We cover how it addresses the last three challenges above, and how it turns knowledge only your organization has (namely data, tools, and processes) into a model no vendor API can match at a fraction of the cost.
+      </p>
+    </section>
+
+    <section id="tldr">
+      <div class="tldr">
+        <p class="tldr-label">TL;DR</p>
+        <div class="tldr-row"><span class="tldr-num">2.2×</span><p>Revenue growth of the top quartile of AI spenders between November 2022 and December 2025 in Ramp's data. Companies with zero AI spend grew about 15% over the same three years, in the same economy: the heavy adopters grew eight times as much.</p></div>
+        <div class="tldr-row"><span class="tldr-num">1</span><p>Playbook the winners converge on: an open-source model, proprietary task data, and reinforcement learning against a scored copy of the workflow. Bridgewater's trained model makes ~30% fewer mistakes than the best frontier model, Harvey's legal agent beats GPT-5.5 and Claude Opus 4.8 on its own rubrics, and Intercom's Fin Apex resolves more support issues at lower cost.</p></div>
+        <div class="tldr-row"><span class="tldr-num">87.3%</span><p>Share of the maximum achievable score our GRPO-trained 9B open-source model reached on catalog review, vs 76.9% for the best frontier configuration: a 13.5% relative improvement over the frontier, and 36% over its own untrained base (64.2%). The five frontier models, even with optimized prompts, plateaued within a tenth of a point of each other; the trained specialist cleared that ceiling.</p></div>
+        <div class="tldr-row"><span class="tldr-num">68×</span><p>Cost advantage per reviewed listing: $0.50 per 1,000 with the specialist vs $34 with the strongest frontier model, and still 40× cheaper than the least expensive frontier option. At roughly 40 million decisions a day, that is about $7M a year instead of $500M, a 98% cost reduction.</p></div>
+      </div>
+    </section>
+
+    <section id="winners">
+      <p class="kicker">Part II</p>
+      <h2>What the winners do differently</h2>
+      <p>
+        Most of the companies pulling ahead in the AI race made the same discovery: owning your
+        intelligence wins on both performance and cost. A model trained to complete your specific workflows
+        in your specific environment is very likely to outperform a general-purpose model that has never seen inside your company.
+        Additionally, since you do not need to pack as many general-purpose capabilities into a model that is meant to operate in a specific environment,
+        you can often get away with a smaller model that is orders of magnitude cheaper to run.
+      </p>
+      <p>
+        Owning your intelligence does not mean cancelling the ChatGPT or Claude subscription.
+        Most workflow automation still starts with frontier models, and that is the right
+        first move: it establishes a baseline for what is technically possible, and every call
+        generates the data (inputs, decisions, corrections) that a specialist model later trains on.
+        Once the automation leaves the prototyping stage, the priority flips to cost and
+        performance at volume, and that is where fine-tuning open-source models with
+        reinforcement learning comes in.
+        In addition to that, your Fable 5 or ChatGPT model can call the specialist model to
+        handle the parts of the workflow that require your internal knowledge, and the
+        specialist model can call the frontier model for tasks that require high general ability.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-grpo"><p class="figure-title">How a model learns to operate in your environment</p><img src="assets/fig-grpo.png" alt="Diagram showing a model interacting with company tools and data, receiving rubric scores, and learning through a reward signal." loading="lazy"><figcaption>The model interacts with your tools and your data, a rubric scores the outcome, and
+        the reward signal updates the model. Repeated across tens of thousands of tasks, the
+        workflow's judgment settles into the weights, while changing facts (prices, inventory,
+        policy text) stay in tools where they belong.</figcaption></figure>
+
+  </div>
+
+  <div class="col">
+    <section id="winners-2">
+      <p>
+        Over the past two years this has hardened into a playbook: an open-source model,
+        proprietary task data, and a reinforcement-learning stage against a scored version of
+        the workflow. Below, we discuss three scenarios where this approach has been applied to real-world tasks.
+      </p>
+      <p>
+        <strong>Bridgewater Associates</strong> is one of the largest hedge funds in the world. Its
+        analysts sift a constant stream of articles, filings, and emails, judging which
+        documents are relevant to the firm's investment thesis and where boilerplate
+        content begins. The catch is that <i>relevant</i> means relevant by Bridgewater's internal
+        judgment, and no amount of prompting got frontier models to absorb that judgment
+        reliably. So, the company decided to train an open-source
+        model on labels from its own expert investors. The trained model
+        <a href="https://thinkingmachines.ai/news/learning-to-replicate-expert-judgment-in-financial-tasks/">makes
+        roughly 30% fewer mistakes than the best frontier model, at a fraction of the
+        inference cost</a>.
+      </p>
+      <p>
+        <strong>Harvey</strong> builds AI agents for law firms. Its hardest workloads are
+        long-horizon: transaction due diligence and legal memo drafting, where the agent
+        navigates large document sets, errors compound across steps, and even the best
+        frontier models at maximum reasoning effort kept falling short of the quality bar.
+        Harvey ran reinforcement learning on an open-weight model and got
+        <a href="https://www.harvey.ai/blog/training-a-legal-agent-with-applied-compute">a
+        legal agent that outperforms both GPT-5.5 and Claude Opus 4.8 on its rubrics</a>.
+      </p>
+      <p>
+        <strong>Intercom</strong> is a customer-service platform whose AI agent, Fin, resolves
+        almost two million customer issues a week. At that volume the problem is unit
+        economics: frontier per-call pricing adds up fast, and every point of resolution rate
+        matters. So Intercom's AI group post-trained its own vertical support model, Fin Apex,
+        on billions of customer-service interactions. Intercom reports that it
+        <a href="https://www.intercom.com/blog/announcing-fin-apex-the-age-of-vertical-models-is-here/">resolves
+        more issues than the best frontier models while being cheaper to run</a>.
+      </p>
+      <p>
+        The same shape repeats well beyond these three. The
+        <a href="#appendix">appendix</a> collects eight more deployments, with what each
+        model was trained to do and what changed once it shipped.
+      </p>
+    </section>
+  </div>
+
+
+  <div class="col">
+    <section id="ecommerce-lineage">
+      <p>
+        One deployment pattern repeats across these cases: reinforcement learning pushes an
+        open-source model past the frontier on a specific set of workflows, at a fixed and
+        dramatically lower cost per call. The deployment typically starts by using prompt and
+        context engineered frontier models to establish the strongest default baseline. Those frontier traces and learnings are then reused to pack the focused
+        capability into a compact model the company owns.
+      </p>
+    </section>
+
+    <section id="case-study">
+      <p class="kicker">Part III</p>
+      <h2>Case Study: Catalogue Integrity Agent</h2>
+      <p>
+        One of the central challenges of running an e-commerce platform is keeping the product
+        catalog trustworthy. Every listing must land in the correct category of the platform's
+        taxonomy, and the attributes that power search, filters, recommendations, and downstream
+        operations must be accurately extracted from its images and description.
+      </p>
+      <div class="stat-row">
+    <div class="stat"><b>+15%</b><span>our fine-tuned 9B open-source model reviews e-commerce product listings more accurately than the best frontier model we tested</span></div>
+    <div class="stat"><b>68×</b><span>cheaper per listing when our fine-tuned model does the reviewing instead of that frontier model</span></div>
+  </div>
+      <p>
+        Platforms staff this work with teams of catalog-integrity analysts, which grow together with the catalog: more listings mean more categories to know, more attributes to check,
+        and more ambiguous edge cases to judge.
+        Inconsistent decisions propagate: products become harder to find, recommendations
+        deteriorate, and policy violations slip through. Miss a counterfeit and you expose
+        customers and brands to fraud; over-flag and you build an expensive review queue that
+        frustrates legitimate sellers.
+      </p>
+      <p>
+        Let's start with the scale. eBay alone carries about
+        <a href="https://investors.ebayinc.com/fast-facts/default.aspx">2.5&nbsp;billion live listings</a>,
+        and Shopify's catalog absorbs
+        <a href="https://shopify.engineering/leveraging-multimodal-llms">more than 10&nbsp;million product updates a day</a>.
+        Walmart has said that doing its AI-assisted catalog work with people alone would have
+        taken <a href="https://www.ciodive.com/news/walmart-generative-ai-data-experience/724426/">roughly 100× the headcount</a>.
+      </p>
+      <p>
+        Getting it wrong costs revenue:
+        <a href="https://www.salsify.com/resources/report/2025-consumer-research">71% of shoppers say they have
+        returned a product because it didn't match its listing</a>. But the reviewing itself is
+        also expensive. A mid-size marketplace generates on the order of 10&nbsp;million listing
+        creates and edits a day; reviewed with a frontier model, that workload costs roughly half
+        a billion dollars a year, while a fine-tuned specialist does the same job for around $10M:
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-bankruptcy"><p class="figure-title">One workload, two price tags</p><img src="assets/fig-bankruptcy.png" alt="Annual catalog review cost comparison between a frontier API and a self-hosted fine-tuned specialist." loading="lazy"><figcaption>The ~50× gap between the two bars is the entire value proposition made concrete:
+        at ingestion scale, the frontier-per-call architecture does not merely cost more, it
+        fails the budget outright. This is why the companies running this exact workflow do not
+        run it on rented models.</figcaption></figure>
+  </div>
+
+  <div class="col">
+    <section id="case-study-3">
+      <p>
+        The companies actually running this workflow confirm the math.
+        <strong>Shopify</strong> classifies products with fine-tuned open models at
+        <a href="https://shopify.engineering/leveraging-multimodal-llms">roughly 40&nbsp;million
+        inferences a day</a>, a volume it says commercial APIs can't economically serve.
+        Inspired by the industry leaders, we ran the playbook ourselves: an agent that examines a listing, searches
+        the product taxonomy, checks the brand, retrieves the attribute schema, and commits a
+        structured decision, escalating to human review when the evidence is thin or the risk
+        too high.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-episode"><p class="figure-title">One episode, end to end</p><img src="assets/fig-episode.png" alt="Example catalog integrity episode for work gloves, including taxonomy search, brand lookup, attribute lookup, and an allowed verdict." loading="lazy"><figcaption>The agent works through the listing the way an analyst would: it finds the right
+        category, verifies the claimed brand, pulls the attribute schema for that category,
+        and commits its decision. A clean listing ends in an approval; a suspicious one must
+        end in a flag. The model learns to weigh the two mistakes asymmetrically, because
+        missing a real violation costs it 7× more than raising a false alarm.</figcaption></figure>
+  </div>
+
+  <div class="col">
+    <section id="methodology">
+      <p class="kicker">Part IV</p>
+      <h2>A digital twin the model can practice in</h2>
+      <p>
+        A model can only practice a workflow it can actually perform, fail at, and retry. So we
+        rebuilt the catalog workflow as a digital twin of an e-commerce platform: a simulated
+        environment with the same listings, the same tools, and the same stakes as the real
+        thing. The raw material is the
+        <a href="https://amazon-berkeley-objects.s3.amazonaws.com/index.html">Amazon Berkeley Objects</a>
+        dataset of real product images and listing data, which we turned into
+        <strong>177,767</strong> review episodes: one listing each, with image, title, description,
+        claimed brand, and region. Into that stream we planted controlled policy cases,
+        mismatched images, conflicting brand claims, and deliberately <em>legitimate</em>
+        claims as hard negatives, so every episode has a known correct answer to score against.
+      </p>
+      <p>
+        Inside the twin, the model works the way an analyst would. It can search a taxonomy of
+        roughly 13,000 categories, check whether a brand is registered and protected, and
+        retrieve the required attributes for a chosen category; then it must commit a category,
+        the attributes, and a policy decision. A scorer grades every episode, rewarding correct
+        outputs and penalizing missed violations, unsupported attributes, invalid categories,
+        and wasted tool calls. The penalties encode business priorities directly: a missed
+        violation costs 7× more than a false alarm.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-twin"><p class="figure-title">The digital twin, end to end</p><img src="assets/fig-twin.png" alt="Digital twin workflow where a listing reaches an agent, the agent uses catalog tools, commits a decision, receives a score, and learns from reward." loading="lazy"><figcaption>Every part of the real workflow has a counterpart in the twin: listings flow in, the
+        agent consults the same tools an analyst would, and a scorer grades each decision.
+        The reward flowing back is what turns practice into learning.</figcaption></figure>
+  </div>
+
+  <div class="col">
+    <section id="methodology-2">
+      <h3>Benchmarking the frontier models</h3>
+      <p>
+        Before any training run, we measured how far the frontier could get on its own. We
+        benchmarked five frontier models (GPT-5.5, GPT-5.6-sol, Gemini 3.1 Pro, Claude Opus
+        4.8, and Claude Fable 5) on 200 stratified validation episodes with identical tools,
+        images, scorer, and turn budget, both with a plain prompt and with optimized prompt
+        instructions: 2,800 characters of extraction conventions, lookup procedure, and worked
+        examples, tuned the way a prompt engineer would tune a
+        production system. The chart below shows both configurations, with our
+        final GRPO-trained model added for comparison.
+      </p>
+      <p>
+        The best frontier configuration reached 76.9% of the achievable score; the trained 9B
+        reached 87.3%. The gap is not intelligence. A frontier model starts every episode from
+        zero: it has never seen this store's taxonomy, doesn't know its inventory conventions,
+        which attribute values count as supported, or how the platform wants corner cases
+        resolved, and it has to reconstruct all of that on the fly, from whatever fits in the
+        prompt, on every single call. Optimized instructions can compress some of that
+        knowledge, but the corner cases that decide the score are exactly the ones no
+        instruction prompt can enumerate.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-plateau"><p class="figure-title">Model benchmarks</p><img src="assets/fig-plateau.png" alt="Benchmark scores for a fine-tuned 9B model, five frontier models, and untrained open-source base models." loading="lazy"><figcaption>Each frontier bar shows the model's zero-shot score in solid teal; the lighter
+        extension is what optimized prompt instructions added. Optimization helped, but only so much: the
+        optimized configurations converged within a tenth of a point of each other, and the
+        strongest zero-shot extractor (Gemini) got <em>worse</em> with the optimized instructions, so its bar
+        shows no gain. The extra instructions weren't free either: they inflated input-token bills by
+        28–55% depending on the model, on every call, forever. Prompted task knowledge is
+        rented per call; trained task knowledge is bought once and lives in the weights.</figcaption></figure>
+  </div>
+
+  <div class="col">
+    <section id="results">
+      <p class="kicker">Part V</p>
+      <h2>Training details</h2>
+      <p>
+        The training setup was modest. We rented two
+        <a href="https://www.nvidia.com/en-eu/products/workstations/professional-desktop-gpus/rtx-pro-6000/">RTX PRO 6000</a>
+        GPUs, one generating rollouts
+        and one applying gradient updates, with the open-source
+        <a href="https://github.com/PrimeIntellect-ai/prime-rl">prime-rl</a> framework running
+        the infrastructure. The full run was 1,000 optimizer steps, took about three and a half
+        days, and cost roughly $500 in GPU time.
+      </p>
+      <p>
+        Most of that was not needed to catch the frontier. The model crossed the frontier band
+        after roughly 250 steps, about a day of training; the remaining steps were spent
+        squeezing out maximum performance. The final model scores 0.626 on the benchmark, 87.3%
+        of the achievable ceiling and about ten points above the best frontier configuration.
+      </p>
+      <p>
+        The gain comes from teaching the model the semantics of its environment: over
+        thousands of scored episodes it learns how the store's taxonomy, tools, and policies
+        relate to the reward, and converges on the optimal distribution of actions over the
+        environment's action space. A general model spreads its capacity across everything;
+        the specialist spends all of it on the specific task at the expense of general ability.
+      </p>
+      <p>
+        The result also isn't a dead end. When a more capable open-source base model ships, the
+        recipe transfers: as a rule of thumb, a stronger base yields a stronger post-trained
+        specialist. And the deployed model generates its own training data as it works: logged
+        decisions can be distilled into supervised fine-tuning sets, making each re-training
+        cheaper and better-informed than the last.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-training"><p class="figure-title">Training run</p><img src="assets/fig-training.png" alt="Training score over 1,000 optimizer steps, showing the 9B model crossing the frontier plateau before step 250." loading="lazy"><figcaption>Every point is a measured evaluation from the W&amp;B training monitor (two sampled
+        rollouts per episode). The 9B run climbs from roughly 0.50 to 0.671 at step 1,000,
+        clearing the frontier band before step 250. The monitor's sampled decoding runs
+        slightly above the strict benchmark harness, where the final 9B adapter scores 0.626.</figcaption></figure>
+
+  </div>
+
+  <div class="col">
+    <p>
+      So far, we have discussed how reinforcement learning helps a language model navigate
+      your company environment more accurately. But one of the most important aspects of this
+      paradigm is that the accuracy also comes cheaper than running frontier models. The
+      cost-vs-quality chart that opens this article puts both on one picture, task score
+      against cost per thousand listings, and the takeaway for a budget owner is simple: with
+      everything else on the chart you are choosing between quality and cost. The trained
+      specialist ends that trade-off, delivering the best score we measured at close to the
+      lowest price.
+    </p>
+    <p>
+      Fine-tuning adds ~23 points over the base 9B at the same ~$0.50 per 1,000 listings:
+      40× cheaper than the least expensive frontier configuration (Gemini, $19/1k) and
+      ~340× cheaper than the most expensive (GPT-5.5-pro, $172/1k). The 2,800 characters
+      of prompt instructions also raised GPT-5.5's measured cost by a third, a
+      <strong>prompt tax</strong> paid on every future call. The specialist's instructions live
+      in its weights. At Shopify-scale volume of roughly 40 million decisions a day, the gap
+      between $34 and $0.50 per thousand is about $500M a year versus $7M.
+    </p>
+
+  </div>
+
+
+  <div class="col">
+    <section id="ownership">
+      <p class="kicker">Part VI</p>
+      <h2>What can owning AI do for you?</h2>
+      <p>
+        Here is the whole experiment in three sentences. We took one high-volume e-commerce
+        workflow, reviewing product listings, and rebuilt it as a digital twin. We let
+        a small open-source model practice inside it for a few days and roughly $500 of GPU
+        time. The trained specialist ended above every frontier configuration we measured, at
+        a fraction of their price per decision.
+      </p>
+      <p>
+        The recipe transfers to any work your business repeats at volume. Look for the places
+        where people or API calls turn information into decisions all day: routing tickets,
+        extracting fields from documents, checking submissions against policy, classifying
+        products, approving or flagging transactions. What unites them is that every decision
+        can be checked: there is a rule, a schema, or an expert who can say whether it was
+        right. That check is the whole trick. If a decision can be scored, a model can
+        practice it; if it can only be debated, it cannot.
+      </p>
+      <p>
+        It is just as important to know where this is the wrong tool. Two questions settle
+        most cases: how frequently the task runs, and whether its outcome is verifiable.
+      </p>
+    </section>
+  </div>
+
+  <div class="wide">
+    <figure class="article-figure" id="fig-quadrant"><p class="figure-title">Right tool for the right-shaped problem</p><img src="assets/fig-quadrant.png" alt="Matrix matching task frequency and outcome verifiability to a frontier model, human review, prompt optimization, or a fine-tuned specialist." loading="lazy"><figcaption>The upper right is where fine-tuning pays: frequent work with verifiable outcomes.
+        Everything else is better rented: a prompt-optimized frontier model covers
+        verifiable but rare work, and a human stays in the loop where outcomes can't be
+        verified. When
+        the problem is changing facts rather than judgment, retrieval is the fix at any
+        volume. The checklist below condenses the upper-right conditions into something you
+        can hold your own workflows against:</figcaption></figure>
+  </div>
+
+  <div class="col">
+    <section id="ownership-2">
+      <div class="checklist">
+        <h3>Your workflow is a fine-tuning candidate if at least one point applies…</h3>
+        <ul>
+          <li>It happens at high volume, often enough that per-decision cost and errors compound into real money</li>
+          <li>Every outcome can be checked by a rule, test, or rubric, with no person in the loop</li>
+          <li>Your experts agree on what a correct answer looks like</li>
+          <li>A capable model already succeeds sometimes, just not reliably enough</li>
+          <li>The right answer can't be a lucky guess</li>
+          <li>It spans several steps: reasoning, tool calls, then a committed decision</li>
+          <li>It runs on your own tools, schemas, and policies</li>
+          <li>Different mistakes carry different costs</li>
+          <li>Sensitive data cannot leave infrastructure you control</li>
+        </ul>
+        <p class="checklist-note">That last one is also the safety argument: a model you train runs inside your own boundary, so prompts and records never reach a vendor.</p>
+      </div>
+      <p>If that describes one of your workflows, the question is no longer whether it's the right fit for you, but which of your decisions you should stop renting. Owning your intelligence is the kind of advantage that compounds: the model, the evaluation, and the data stay yours and improve together, on your terms.</p>
+    </section>
+
+    <p class="model-link">The trained models are available on <a href="https://huggingface.co/BosonicJustin">Hugging Face</a>.</p>
+
+  </div>
+
+  <div class="wide">
+    <section class="appendix" id="appendix">
+      <p class="kicker">Appendix</p>
+      <h2>The track record: task-trained specialists vs. prompted frontier models</h2>
+      <p class="appendix-intro">
+        Beyond the flagships, the same shape repeats across industries. Every result below is
+        the company's own reported figure against the frontier model it was replacing or
+        competing with; each company name links to the write-up it came from.
+      </p>
+      <div class="tbl-wrap">
+        <table class="data track">
+          <colgroup>
+            <col><col class="c-what"><col class="c-result"><col class="c-payoff">
+          </colgroup>
+          <thead>
+            <tr><th>Company</th><th>What the model does</th><th>Result</th><th>Business payoff</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-th="Company"><a href="https://cognition.ai/blog/swe-1-7">Cognition</a></td>
+              <td data-th="What the model does">Writes and fixes software in production</td>
+              <td data-th="Result">Beats GPT-5.5 on a standard coding benchmark</td>
+              <td data-th="Business payoff">Frontier-level output at a fraction of the serving cost, streaming 1,000 tokens per second</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://www.adaptive-ml.com/post/how-att-saves-millions-with-specialized-language-models">AT&amp;T</a></td>
+              <td data-th="What the model does">Summarizes 900k support calls a day and flags personal data</td>
+              <td data-th="Result">17% better than GPT-4o at catching personal data</td>
+              <td data-th="Business payoff">Reviews fraud cases 12× faster at GPT-4o accuracy; saves millions of dollars annually</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://www.linkedin.com/blog/engineering/generative-ai/how-we-built-domain-adapted-foundation-genai-models-to-power-our-platform">LinkedIn</a></td>
+              <td data-th="What the model does">Matches candidates to job openings</td>
+              <td data-th="Result">4% more accurate than the GPT model it replaced</td>
+              <td data-th="Business payoff">75× cheaper than GPT-4, 6× cheaper than GPT-4o</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://www.ambiencehealthcare.com/blog/ambience-healthcare-s-ai-platform-surpasses-clinician-performance-by-27-in-medical-coding-powered-by-new-openai-breakthrough">Ambience Healthcare</a></td>
+              <td data-th="What the model does">Assigns medical billing codes</td>
+              <td data-th="Result">More accurate than 18 board-certified physicians on a gold-panel test</td>
+              <td data-th="Business payoff">12 points ahead of prompted o4-mini, the OpenAI model it was built from</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://venturebeat.com/business/phonelys-new-ai-agents-hit-99-accuracy-and-customers-cant-tell-theyre-not-human">Phonely</a></td>
+              <td data-th="What the model does">Answers customer phone calls</td>
+              <td data-th="Result">99.2% accuracy vs GPT-4o's 94.7%</td>
+              <td data-th="Business payoff">Responses 73% faster than its previous GPT-4o setup; one customer replaced 350 human agents in a month</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://openpipe.ai/blog/art-e-mail-agent">OpenPipe</a></td>
+              <td data-th="What the model does">Handles email and support tickets</td>
+              <td data-th="Result">93% on support QA where OpenAI's o3 scored 50%</td>
+              <td data-th="Business payoff">64× cheaper and 5× faster to run than o3</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://www.perplexity.ai/hub/blog/meet-new-sonar">Perplexity</a></td>
+              <td data-th="What the model does">Answers search queries with sources</td>
+              <td data-th="Result">Matches GPT-4o in blind user tests</td>
+              <td data-th="Business payoff">10× the speed of GPT-4o at a fraction of the price</td>
+            </tr>
+            <tr>
+              <td data-th="Company"><a href="https://21944583.fs1.hubspotusercontent-na1.net/hubfs/21944583/Webinar%20Files/LLMOps%20Micro-Summit_%20Checkr%20-%20Streamlining%20Background%20Checks%20with%20a%20Fine-tuned%20Classifier%20on%20Predibase.pdf">Checkr</a></td>
+              <td data-th="What the model does">Classifies criminal-record entries in background checks</td>
+              <td data-th="Result">Beats GPT-4 on the hardest cases</td>
+              <td data-th="Business payoff">5× cheaper and 30× faster than its previous GPT-4 setup</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="footnotes" id="footnotes">
+      <p class="kicker">Sources &amp; notes</p>
+      <ol>
+        <li id="fn1">Ramp AI-spend and revenue data, Nov 2022 – Dec 2025: <a href="https://x.com/eglyman/status/2036477278394138772">Ramp CEO Eric Glyman on X</a>, July 2026.</li>
+        <li id="fn2">Uber: <a href="https://fortune.com/2026/05/26/uber-coo-ai-spending-tokens-claude-code/">Fortune, May 2026</a>, the entire 2026 AI budget spent in four months. Microsoft: <a href="https://www.buildmvpfast.com/blog/microsoft-cancels-claude-code-licenses-ai-cost-engineer-2026">BuildMVPFast, 2026</a>, on the cancelled Claude Code licenses.</li>
+        <li id="fn3">Thinking Machines Lab × Bridgewater AIA Labs, <a href="https://thinkingmachines.ai/news/learning-to-replicate-expert-judgment-in-financial-tasks/">Learning to Replicate Expert Judgment in Financial Tasks</a>, June 2026.</li>
+        <li id="fn4">Ramp × Prime Intellect, <a href="https://www.primeintellect.ai/case-study/ramp">How Ramp Used RL to Beat Frontier Models at Spreadsheet Search</a>, July 2026.</li>
+        <li id="fn5">Shopify Engineering, <a href="https://shopify.engineering/leveraging-multimodal-llms">Leveraging multimodal LLMs at scale</a>.</li>
+        <li id="fn6">Checkr, <a href="https://21944583.fs1.hubspotusercontent-na1.net/hubfs/21944583/Webinar%20Files/LLMOps%20Micro-Summit_%20Checkr%20-%20Streamlining%20Background%20Checks%20with%20a%20Fine-tuned%20Classifier%20on%20Predibase.pdf">LLMOps Micro-Summit presentation</a> on fine-tuned charge classification.</li>
+        <li id="fn7">Catalog sizes: <a href="https://investors.ebayinc.com/fast-facts/default.aspx">eBay investor relations</a> (~2.5B live listings, Dec 2025); <a href="https://tech.instacart.com/optimizing-search-relevance-at-instacart-using-hybrid-retrieval-88cb579b959c">Instacart Engineering</a> (1.4B items, 1,500+ retailers); <a href="https://www.marketplacepulse.com/articles/marketplace-is-driving-walmarts-online-progress">Marketplace Pulse</a> (420M+ Walmart.com products; Walmart does not disclose).</li>
+        <li id="fn8">Walmart Q2 FY2025 earnings call, via <a href="https://www.ciodive.com/news/walmart-generative-ai-data-experience/724426/">CIO Dive</a>: 850M+ catalog data points created or improved with generative AI, estimated at ~100× current headcount if done manually.</li>
+        <li id="fn9"><a href="https://www.salsify.com/resources/report/2025-consumer-research">Salsify 2025 Consumer Research</a> (n=1,910, US/UK) and <a href="https://www.akeneo.com/white-paper/2023-b2c-survey-results-report/">Akeneo 2023 Global B2C Survey</a>. Both are vendor-commissioned surveys by product-information-management companies; treat directionally.</li>
+        <li id="fn10">The Wall Street Journal, <a href="https://www.wsj.com/tech/ai/ai-giants-are-handing-out-tons-of-free-computing-power-to-grab-startup-share-c00a5c5c">AI giants are handing out tons of free computing power to grab startup share</a>: the token-cost subsidies referenced in Problem 01.</li>
+        <li id="fn11">Anthropic Engineering, <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents">Effective context engineering for AI agents</a>.</li>
+        <li id="fn12">Liu et al., <a href="https://arxiv.org/abs/2307.03172">Lost in the Middle: How Language Models Use Long Contexts</a>, arXiv 2307.03172.</li>
+        <li id="fn13">METR, <a href="https://metr.org/blog/2026-05-11-ai-usage-survey/">AI usage survey</a>, May 2026: self-reported AI gains overestimate measured time savings by roughly 40 percentage points.</li>
+        <li id="fn14">Sentra, <a href="https://www.sentra.app/articles/what-is-a-company-brain">What is a company brain? The 2026 guide</a>.</li>
+        <li id="fn15">Case write-ups linked in the text:
+          <a href="https://www.harvey.ai/blog/training-a-legal-agent-with-applied-compute">Harvey × Applied Compute</a>,
+          <a href="https://www.intercom.com/blog/announcing-fin-apex-the-age-of-vertical-models-is-here/">Intercom Fin Apex</a>,
+          <a href="https://cognition.ai/blog/swe-1-7">Cognition SWE-1.7</a>,
+          <a href="https://www.adaptive-ml.com/post/how-att-saves-millions-with-specialized-language-models">Adaptive ML × AT&amp;T</a>,
+          <a href="https://www.linkedin.com/blog/engineering/generative-ai/how-we-built-domain-adapted-foundation-genai-models-to-power-our-platform">LinkedIn EON</a>,
+          <a href="https://www.ambiencehealthcare.com/blog/ambience-healthcare-s-ai-platform-surpasses-clinician-performance-by-27-in-medical-coding-powered-by-new-openai-breakthrough">Ambience Healthcare</a>,
+          <a href="https://venturebeat.com/business/phonelys-new-ai-agents-hit-99-accuracy-and-customers-cant-tell-theyre-not-human">Phonely (VentureBeat)</a>,
+          <a href="https://openpipe.ai/blog/art-e-mail-agent">OpenPipe ART·E</a>,
+          <a href="https://www.perplexity.ai/hub/blog/meet-new-sonar">Perplexity Sonar</a>,
+          <a href="https://company.instacart.com/tech-innovation/building-the-intent-engine-how-instacart-is-revamping-query-understanding-with-llms">Instacart</a>,
+          <a href="https://appliedcompute.com/case-studies/doordash">DoorDash × Applied Compute</a>,
+          <a href="https://shopify.engineering/fine-tuning-agent-shopify-flow">Shopify Flow agent</a>.</li>
+      </ol>
+    </section>
+  </div>
+
+    </article>
+
+    <footer class="page-end">
+      <a href="../">&larr; back to home</a>
+      <p>&copy; 2026 Fabian Hildesheim</p>
+    </footer>
+  </main>
+</body>
+</html>
