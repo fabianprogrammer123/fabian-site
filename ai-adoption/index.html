@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <meta name="description" content="Three observations about the gap between AI capabilities, adoption, and access.">
+  <title>On AI Adoption | Fabian Hildesheim</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #222;
+      --muted: #666;
+      --faint: #999;
+      --rule: #ccc;
+      --soft-rule: #e3e3e3;
+      --paper: #fff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    a:hover { color: var(--muted); }
+
+    a:focus-visible {
+      outline: 1px solid var(--ink);
+      outline-offset: 4px;
+    }
+
+    .site-shell {
+      width: min(100%, 1040px);
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-bottom: 44px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .article-header {
+      width: min(100%, 760px);
+      margin: 0 auto 58px;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: clamp(1.85rem, 4.4vw, 2.75rem);
+      line-height: 1.12;
+      letter-spacing: -0.035em;
+    }
+
+    .subtitle {
+      max-width: 660px;
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .byline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px 9px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+
+    .byline .date {
+      flex-basis: 100%;
+      margin-top: 4px;
+      color: var(--faint);
+    }
+
+    .article-body {
+      width: min(100%, 660px);
+      margin: 0 auto;
+    }
+
+    .article-body > p {
+      margin: 0 0 38px;
+      font-size: 0.98rem;
+    }
+
+    .observation {
+      margin: 0 0 44px;
+      padding-top: 18px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .observation-label {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .observation h2 {
+      margin: 0 0 12px;
+      font-size: 1.08rem;
+      line-height: 1.4;
+    }
+
+    .observation p {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    .article-figure {
+      width: min(100%, 860px);
+      margin: 32px auto 64px;
+    }
+
+    .article-figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--soft-rule);
+      background: #fff;
+    }
+
+    .article-figure figcaption {
+      max-width: 660px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.6;
+    }
+
+    .page-end {
+      width: min(100%, 660px);
+      margin: 56px auto 0;
+      padding-top: 22px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .page-end p {
+      margin: 18px 0 0;
+      color: var(--faint);
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 700px) {
+      .site-shell { padding-top: 22px; }
+      .back-link { margin-bottom: 34px; }
+      .article-header { margin-bottom: 46px; }
+      .article-figure { margin: 24px auto 52px; }
+
+      .article-figure img {
+        width: calc(100% + 16px);
+        max-width: none;
+        margin-left: -8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="site-shell">
+    <a class="back-link" href="../">&larr; back to home</a>
+
+    <header class="article-header">
+      <h1>On AI Adoption</h1>
+      <p class="subtitle">Three observations from my research at Stanford HAI.</p>
+      <p class="byline">
+        <a href="https://www.linkedin.com/in/fabian-hildesheim/">Fabian Hildesheim</a>
+        <span class="date">March 2026</span>
+      </p>
+    </header>
+
+    <article>
+      <div class="article-body">
+        <p>
+          Since starting my research at Stanford Institute for Human-Centered Artificial Intelligence (HAI), I realized 3 points are not publicly discussed with sufficient clarity:
+        </p>
+
+        <section class="observation">
+          <p class="observation-label">Observation 01</p>
+          <h2>The adoption gap is larger than it looks</h2>
+          <p>
+            The delta of AI Adoption (whats technically possible vs. whats practically implemented) is more significant than you might think. And this delta is relevant for almost all jobs!
+          </p>
+        </section>
+      </div>
+
+      <figure class="article-figure">
+        <img src="../anthropic_graph.jpg" alt="Radar chart comparing theoretical AI coverage with observed AI coverage across occupational sectors.">
+        <figcaption>Theoretical exposure to AI remains much larger than observed usage across most occupations.</figcaption>
+      </figure>
+
+      <div class="article-body">
+        <section class="observation">
+          <p class="observation-label">Observation 02</p>
+          <h2>Using AI effectively is a learnable skill</h2>
+          <p>
+            There are massive individual differences in productivity uplift. OpenAI calls this "Capability Overhang". They measured across 70+ countries and found that power users leverage 7x more thinking capabilities than average ones. This underscores that using AI is clearly, to some extent, a learnable skill, probably a bit like a mixture of managing a team, formulating a research question and critically reviewing an essay.
+          </p>
+        </section>
+      </div>
+
+      <figure class="article-figure">
+        <img src="../2_openai_capability_overhang.png" alt="Bar chart showing that power users use seven times more thinking capabilities than typical users.">
+        <figcaption>OpenAI's capability overhang: power users draw on substantially more of the available thinking capability.</figcaption>
+      </figure>
+
+      <div class="article-body">
+        <section class="observation">
+          <p class="observation-label">Observation 03</p>
+          <h2>Access is still highly unequal</h2>
+          <p>
+            It's a huge problem that compute, data, AI talent, and funding are already so centralized in the hands of a few people, companies, and countries. Most people on earth have never even used an LLM! Given the 2 points above, it is very important that more people experiment with LLMs, take bolder measures to catch up in adoption, and ensure that productivity gains translate into actual improvements of our society!
+          </p>
+        </section>
+      </div>
+
+      <figure class="article-figure">
+        <img src="../humanity_graoh.png" alt="Grid representing humanity, with most people shown as never having used AI and a small minority shown as chatbot, paid AI, or coding scaffold users.">
+        <figcaption>Most people in the world have never used AI, while advanced usage remains concentrated among a very small group.</figcaption>
+      </figure>
+    </article>
+
+    <footer class="page-end">
+      <a href="../">&larr; back to home</a>
+      <p>&copy; 2026 Fabian Hildesheim</p>
+    </footer>
+  </main>
+</body>
+</html>
