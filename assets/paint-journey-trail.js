@@ -41,7 +41,9 @@
     var originX = 0;
     var originY = 0;
     var exclusionZones = [];
+    var exclusionFrame = 0;
     var resizeFrame = 0;
+    var contentResizeObserver = null;
     var destroyed = false;
 
     function getExclusionZones() {
@@ -261,15 +263,35 @@
       });
     }
 
+    function scheduleExclusionRefresh() {
+      if (exclusionFrame || destroyed) return;
+      exclusionFrame = window.requestAnimationFrame(function () {
+        exclusionFrame = 0;
+        rebuildExclusions();
+        clearExclusionZones();
+      });
+    }
+
     function destroy() {
       if (destroyed) return;
       destroyed = true;
+      if (exclusionFrame) window.cancelAnimationFrame(exclusionFrame);
       if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      if (contentResizeObserver) contentResizeObserver.disconnect();
+      document.removeEventListener('toggle', scheduleResize, true);
+      window.removeEventListener('scroll', scheduleExclusionRefresh);
       window.removeEventListener('resize', scheduleResize);
       window.removeEventListener('orientationchange', scheduleResize);
     }
 
     resize();
+    var journeyContent = document.querySelector('.journey-content');
+    if (typeof window.ResizeObserver === 'function' && journeyContent) {
+      contentResizeObserver = new window.ResizeObserver(scheduleResize);
+      contentResizeObserver.observe(journeyContent);
+    }
+    document.addEventListener('toggle', scheduleResize, true);
+    window.addEventListener('scroll', scheduleExclusionRefresh, { passive: true });
     window.addEventListener('resize', scheduleResize);
     window.addEventListener('orientationchange', scheduleResize);
 

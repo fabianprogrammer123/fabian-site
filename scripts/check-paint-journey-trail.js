@@ -12,6 +12,13 @@ const source = fs.readFileSync(path.join(root, 'assets/paint-journey-trail.js'),
 
 function createHarness(options = {}) {
   const operations = [];
+  const animationFrames = new Map();
+  const documentListeners = new Map();
+  const windowListeners = new Map();
+  const journeyContent = {};
+  let nextAnimationFrame = 1;
+  let resizeObserverCallback = null;
+  let resizeObserverTarget = null;
   let selectorQueries = 0;
 
   function createContext(recordOperations) {
@@ -46,7 +53,9 @@ function createHarness(options = {}) {
   };
   const content = {
     getBoundingClientRect() {
-      return options.contentRect || { left: 111, top: 140, width: 20, height: 10 };
+      return typeof options.contentRect === 'function'
+        ? options.contentRect()
+        : options.contentRect || { left: 111, top: 140, width: 20, height: 10 };
     }
   };
   const document = {
@@ -55,6 +64,18 @@ function createHarness(options = {}) {
     querySelectorAll() {
       selectorQueries += 1;
       return [content];
+    },
+    querySelector(selector) {
+      return selector === '.journey-content' ? journeyContent : null;
+    },
+    addEventListener(type, callback) {
+      const listeners = documentListeners.get(type) || [];
+      listeners.push(callback);
+      documentListeners.set(type, listeners);
+    },
+    removeEventListener(type, callback) {
+      const listeners = documentListeners.get(type) || [];
+      documentListeners.set(type, listeners.filter((listener) => listener !== callback));
     },
     createElement() {
       return { width: 0, height: 0, getContext() { return createContext(false); } };
@@ -67,15 +88,58 @@ function createHarness(options = {}) {
     scrollY: 7,
     pageXOffset: 5,
     pageYOffset: 7,
-    requestAnimationFrame() { return 1; },
-    cancelAnimationFrame() {},
-    addEventListener() {},
-    removeEventListener() {}
+    ResizeObserver: function ResizeObserver(callback) {
+      resizeObserverCallback = callback;
+      this.observe = function observe(target) { resizeObserverTarget = target; };
+      this.disconnect = function disconnect() { resizeObserverTarget = null; };
+    },
+    requestAnimationFrame(callback) {
+      const frame = nextAnimationFrame;
+      nextAnimationFrame += 1;
+      animationFrames.set(frame, callback);
+      return frame;
+    },
+    cancelAnimationFrame(frame) { animationFrames.delete(frame); },
+    addEventListener(type, callback) {
+      const listeners = windowListeners.get(type) || [];
+      listeners.push(callback);
+      windowListeners.set(type, listeners);
+    },
+    removeEventListener(type, callback) {
+      const listeners = windowListeners.get(type) || [];
+      windowListeners.set(type, listeners.filter((listener) => listener !== callback));
+    }
   };
 
   vm.runInNewContext(source, { window, document });
   const trail = window.PaintJourney.createTrail({ canvas });
-  return { operations, trail, selectorQueryCount: () => selectorQueries };
+  return {
+    operations,
+    trail,
+    selectorQueryCount: () => selectorQueries,
+    journeyContent,
+    resizeObserverTarget: () => resizeObserverTarget,
+    triggerContentResize() {
+      if (resizeObserverCallback) resizeObserverCallback([{ target: journeyContent }]);
+    },
+    fireWindowEvent(type) {
+      for (const listener of windowListeners.get(type) || []) listener({ type });
+    },
+    setScroll(x, y) {
+      window.scrollX = x;
+      window.pageXOffset = x;
+      window.scrollY = y;
+      window.pageYOffset = y;
+    },
+    fireDocumentEvent(type) {
+      for (const listener of documentListeners.get(type) || []) listener({ type });
+    },
+    flushAnimationFrames() {
+      const pending = Array.from(animationFrames.values());
+      animationFrames.clear();
+      for (const callback of pending) callback();
+    }
+  };
 }
 
 function testDocumentCoordinatesUseCanvasOrigin() {
@@ -118,8 +182,48 @@ function testStaticSpectrumUsesLocalExclusions() {
   assert.deepEqual(firstArc.slice(1, 3), [12, 95], 'edge lane must move below a local exclusion zone');
 }
 
+function testScrollRefreshesExclusionsOncePerFrame() {
+  const fixedRect = { left: 111, top: 50, width: 20, height: 10 };
+  const harness = createHarness({ contentRect: () => fixedRect });
+  assert.equal(harness.selectorQueryCount(), 1, 'initial resize must build exclusions once');
+
+  harness.setScroll(5, 107);
+  harness.fireWindowEvent('scroll');
+  harness.fireWindowEvent('scroll');
+  assert.equal(harness.selectorQueryCount(), 1, 'scroll refresh must wait for animation frame');
+
+  harness.flushAnimationFrames();
+  assert.equal(harness.selectorQueryCount(), 2, 'scroll events in one frame must share one refresh');
+  const refreshedClear = harness.operations.filter((operation) => operation[0] === 'clearRect').at(-1);
+  assert.deepEqual(refreshedClear.slice(1), [86, 96, 48, 38], 'fixed exclusion must follow scroll position');
+  harness.trail.stamp({ x: 40, y: 80, hue: 80 });
+  assert.equal(harness.selectorQueryCount(), 2, 'paint must reuse the refreshed exclusions');
+}
+
+function testContentResizeRefreshesExclusions() {
+  const harness = createHarness();
+  assert.equal(harness.resizeObserverTarget(), harness.journeyContent, 'journey content must be observed');
+
+  harness.triggerContentResize();
+  assert.equal(harness.selectorQueryCount(), 1, 'content resize must wait for animation frame');
+  harness.flushAnimationFrames();
+  assert.equal(harness.selectorQueryCount(), 2, 'content resize must rebuild exclusions');
+}
+
+function testDetailsToggleRefreshesExclusions() {
+  const harness = createHarness();
+
+  harness.fireDocumentEvent('toggle');
+  assert.equal(harness.selectorQueryCount(), 1, 'details toggle must wait for animation frame');
+  harness.flushAnimationFrames();
+  assert.equal(harness.selectorQueryCount(), 2, 'details toggle must rebuild exclusions');
+}
+
 testDocumentCoordinatesUseCanvasOrigin();
 testStampsReuseExclusionsUntilResize();
 testStaticSpectrumUsesLocalExclusions();
+testScrollRefreshesExclusionsOncePerFrame();
+testContentResizeRefreshesExclusions();
+testDetailsToggleRefreshesExclusions();
 
 console.log('PASS: paint journey trail behavior');

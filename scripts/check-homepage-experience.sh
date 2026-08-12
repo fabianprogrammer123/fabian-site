@@ -110,6 +110,11 @@ for text in \
   'ribbon' \
   'spray' \
   'resize' \
+  'scheduleExclusionRefresh' \
+  'ResizeObserver' \
+  "querySelector('.journey-content')" \
+  "addEventListener('scroll'" \
+  "addEventListener('toggle'" \
   'destroy'; do
   require_text "$trail" "$text"
 done
