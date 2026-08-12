@@ -136,8 +136,13 @@ for text in \
   'pull-bucket' \
   'paint-swing' \
   'rest' \
+  'HemisphereLight' \
+  'DirectionalLight' \
+  'rig-lighting' \
   'dispose'; do
   require_text "$character" "$text"
 done
+
+node "$root/scripts/check-paint-journey-character.js"
 
 printf 'PASS: homepage CV and navigation contract\n'

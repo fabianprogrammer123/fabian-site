@@ -100,6 +100,18 @@
     }
 
     var root = joint('paint-climber-root');
+    var rigLighting = joint('rig-lighting', root);
+    var keyLight = new THREE.HemisphereLight(0xfff8e8, 0x31363d, 0.55);
+    keyLight.name = 'rig-key-light';
+    keyLight.position.set(20, 110, 45);
+    rigLighting.add(keyLight);
+    var rimLight = new THREE.DirectionalLight(0xdde7ff, 0.45);
+    rimLight.name = 'rig-rim-light';
+    rimLight.position.set(-45, 105, 65);
+    rimLight.target.name = 'rig-rim-target';
+    rimLight.target.position.set(0, 65, 0);
+    rigLighting.add(rimLight);
+    rigLighting.add(rimLight.target);
     var contactShadow = mesh(
       'contact-shadow',
       new THREE.CircleGeometry(18, 16),
@@ -204,6 +216,40 @@
       return value * value * (3 - 2 * value);
     }
 
+    function ankleInRoot(leg) {
+      var pelvisAngle = pelvis.rotation.z;
+      var hipAngle = pelvisAngle + leg.hip.rotation.z;
+      var kneeAngle = hipAngle + leg.knee.rotation.z;
+      var pelvisCos = Math.cos(pelvisAngle);
+      var pelvisSin = Math.sin(pelvisAngle);
+      var hipCos = Math.cos(hipAngle);
+      var hipSin = Math.sin(hipAngle);
+      var kneeCos = Math.cos(kneeAngle);
+      var kneeSin = Math.sin(kneeAngle);
+      return {
+        x: pelvis.position.x
+          + leg.hip.position.x * pelvisCos - leg.hip.position.y * pelvisSin
+          + leg.knee.position.x * hipCos - leg.knee.position.y * hipSin
+          + leg.ankle.position.x * kneeCos - leg.ankle.position.y * kneeSin,
+        y: pelvis.position.y
+          + leg.hip.position.x * pelvisSin + leg.hip.position.y * pelvisCos
+          + leg.knee.position.x * hipSin + leg.knee.position.y * hipCos
+          + leg.ankle.position.x * kneeSin + leg.ankle.position.y * kneeCos
+      };
+    }
+
+    var plantedAnkles = {
+      left: ankleInRoot(leftLeg),
+      right: ankleInRoot(rightLeg)
+    };
+
+    function plantWalkAnkle(leg, target) {
+      var ankle = ankleInRoot(leg);
+      pelvis.position.x += target.x - ankle.x;
+      pelvis.position.y += target.y - ankle.y;
+      leg.ankle.rotation.z = -(pelvis.rotation.z + leg.hip.rotation.z + leg.knee.rotation.z);
+    }
+
     function poseWalk(progress, phase) {
       var cycle = phase + progress * TAU;
       var stride = Math.sin(cycle);
@@ -223,7 +269,12 @@
       bucketArm.shoulder.rotation.z = stride * 0.25;
       throwingArm.elbow.rotation.z = -0.15 - liftRight * 0.22;
       bucketArm.elbow.rotation.z = 0.18 + liftLeft * 0.12;
-      bucketPose.rotation.z = -stride * 0.18;
+      bucketPose.rotation.z = -Math.sin(cycle - 0.56) * 0.18;
+      if (stride >= 0) {
+        plantWalkAnkle(rightLeg, plantedAnkles.right);
+      } else {
+        plantWalkAnkle(leftLeg, plantedAnkles.left);
+      }
     }
 
     function poseCoil(progress, phase) {
