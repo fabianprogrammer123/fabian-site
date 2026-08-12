@@ -10,6 +10,7 @@ trail="$root/assets/paint-journey-trail.js"
 character="$root/assets/paint-journey-character.js"
 rope="$root/assets/paint-journey-rope.js"
 particles="$root/assets/paint-journey-particles.js"
+journey="$root/assets/paint-journey.js"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -171,6 +172,40 @@ for text in \
   'activeCount' \
   'trail.stamp'; do
   require_text "$particles" "$text"
+done
+
+test -f "$journey" || fail "missing assets/paint-journey.js"
+
+for text in \
+  'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js' \
+  'idle' \
+  'loading' \
+  'entering' \
+  'bottom-paint' \
+  'walk' \
+  'coil-rope' \
+  'throw-rope' \
+  'brace' \
+  'climb' \
+  'pull-bucket' \
+  'paint-swing' \
+  'portrait-rest' \
+  'cancelled-rest' \
+  'getWorldPosition' \
+  'wheel' \
+  'touchstart' \
+  'pointerdown' \
+  'keydown' \
+  'Escape' \
+  'webglcontextlost'; do
+  require_text "$journey" "$text"
+done
+
+for text in \
+  'PaintFinale.startFallback' \
+  'staticOnly' \
+  'PaintJourneyControllerClaimed'; do
+  require_text "$finale" "$text"
 done
 
 printf 'PASS: homepage CV and navigation contract\n'

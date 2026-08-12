@@ -1,4 +1,6 @@
 (() => {
+  const PaintFinale = window.PaintFinale = window.PaintFinale || {};
+  const pendingStart = PaintFinale.pendingStart;
   const stage = document.getElementById('paint-finale');
   const canvas = document.getElementById('paint-finale-canvas');
   const walker = stage && stage.querySelector('.finale-walker');
@@ -33,8 +35,8 @@
   let startTime = 0;
   let lastPaintProgress = 0;
   let resizeFrame = 0;
-
-  stage.classList.add('is-enhanced');
+  let fallbackRequested = false;
+  let staticMode = false;
 
   function clamp(value, minimum = 0, maximum = 1) {
     return Math.min(maximum, Math.max(minimum, value));
@@ -323,6 +325,11 @@
   }
 
   function handleResize() {
+    if (staticMode) {
+      sizeCanvas();
+      renderPaint(1);
+      return;
+    }
     window.cancelAnimationFrame(resizeFrame);
     resizeFrame = window.requestAnimationFrame(() => {
       sizeCanvas();
@@ -330,20 +337,39 @@
     });
   }
 
-  sizeCanvas();
-  if (reducedMotion) {
-    showReducedMotionState();
-  } else if ('IntersectionObserver' in window) {
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        observer.disconnect();
-        begin();
-      }
-    }, { threshold: 0.45 });
-    observer.observe(stage);
-  } else {
+  PaintFinale.startFallback = function startFallback({ staticOnly = false } = {}) {
+    if (fallbackRequested) return;
+    fallbackRequested = true;
+    staticMode = staticOnly || reducedMotion;
+    stage.classList.add('is-enhanced');
+    sizeCanvas();
+    window.addEventListener('resize', handleResize, { passive: true });
+
+    if (staticMode) {
+      showReducedMotionState();
+      return;
+    }
+
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          begin();
+        }
+      }, { threshold: 0.45 });
+      observer.observe(stage);
+      return;
+    }
+
     begin();
+  };
+
+  if (pendingStart) {
+    delete PaintFinale.pendingStart;
+    PaintFinale.startFallback(pendingStart);
   }
 
-  window.addEventListener('resize', handleResize, { passive: true });
+  window.setTimeout(() => {
+    if (window.PaintJourneyControllerClaimed !== true) PaintFinale.startFallback();
+  }, 1200);
 })();
