@@ -65,6 +65,13 @@ for level in thoughts background now why-this-site portrait; do
   require_text "$home" "data-journey-level=\"$level\""
 done
 
+awk '
+  /^[[:space:]]*body[[:space:]]*\{/ { in_body = 1; next }
+  in_body && /^[[:space:]]*\}/ { in_body = 0 }
+  in_body && /position:[[:space:]]*relative;/ { found = 1 }
+  END { exit !found }
+' "$home" || fail "missing position: relative in body rule"
+
 for text in \
   'id="paint-finale"' \
   'id="paint-finale-canvas"' \
