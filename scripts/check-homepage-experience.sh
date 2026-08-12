@@ -42,6 +42,7 @@ require_text "$home" 'assets/homepage-navigation.js'
 require_text "$nav" 'IntersectionObserver'
 require_text "$nav" 'aria-current'
 require_text "$nav" "prefers-reduced-motion: reduce"
+require_text "$nav" 'updateFromScroll'
 
 for text in \
   'id="paint-finale"' \
@@ -62,6 +63,7 @@ for text in \
   'devicePixelRatio' \
   'prefers-reduced-motion: reduce' \
   'drawRibbons' \
+  'drawWhorls' \
   'drawSplatters' \
   'animationComplete'; do
   require_text "$finale" "$text"

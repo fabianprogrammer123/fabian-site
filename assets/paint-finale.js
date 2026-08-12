@@ -96,23 +96,23 @@
     const spill = spillPoint();
     return [
       {
-        color: palette[0], width: 46, delay: 0,
+        color: palette[0], width: 58, delay: 0,
         points: [spill, { x: spill.x - width * 0.12, y: height * 0.96 }, { x: width * 0.56, y: height * 1.03 }, { x: width * 0.06, y: height * 0.83 }]
       },
       {
-        color: palette[1], width: 31, delay: 0.05,
+        color: palette[1], width: 42, delay: 0.05,
         points: [spill, { x: spill.x - width * 0.05, y: height * 0.36 }, { x: width * 0.70, y: height * 0.10 }, { x: width * 0.48, y: height * 0.46 }]
       },
       {
-        color: palette[2], width: 43, delay: 0.11,
+        color: palette[2], width: 55, delay: 0.11,
         points: [spill, { x: spill.x - width * 0.16, y: height * 1.12 }, { x: width * 0.48, y: height * 0.72 }, { x: width * 0.22, y: height * 0.92 }]
       },
       {
-        color: palette[3], width: 19, delay: 0.17,
+        color: palette[3], width: 27, delay: 0.17,
         points: [spill, { x: spill.x - width * 0.08, y: height * 0.21 }, { x: width * 0.73, y: height * 0.04 }, { x: width * 0.61, y: height * 0.31 }]
       },
       {
-        color: palette[4], width: 27, delay: 0.23,
+        color: palette[4], width: 38, delay: 0.23,
         points: [spill, { x: spill.x - width * 0.22, y: height * 0.22 }, { x: width * 0.43, y: height * 0.02 }, { x: width * 0.13, y: height * 0.49 }]
       }
     ];
@@ -126,35 +126,85 @@
     definitions.forEach((ribbon, ribbonIndex) => {
       const localProgress = easeOut(clamp((progress - ribbon.delay) / (1 - ribbon.delay)));
       if (localProgress <= 0) return;
-      const samples = Math.max(2, Math.floor(localProgress * 112));
+      const samples = Math.max(4, Math.floor(localProgress * 112));
+      const leftEdge = [];
+      const rightEdge = [];
+      const centerLine = [];
 
-      for (let index = 1; index <= samples; index += 1) {
-        const previousT = (index - 1) / 112;
-        const currentT = index / 112;
-        const previous = cubicPoint(ribbon.points, previousT);
-        const current = cubicPoint(ribbon.points, currentT);
-        const taper = Math.sin(Math.PI * clamp(currentT * 0.92)) * 0.68 + 0.28;
-        const pulse = 1 + Math.sin(index * 1.7 + ribbonIndex) * 0.055;
-
-        context.beginPath();
-        context.moveTo(previous.x, previous.y);
-        context.lineTo(current.x, current.y);
-        context.strokeStyle = ribbon.color;
-        context.globalAlpha = 0.78;
-        context.lineWidth = ribbon.width * taper * pulse;
-        context.lineCap = 'round';
-        context.stroke();
-
-        if (index % 2 === 0) {
-          context.beginPath();
-          context.moveTo(previous.x, previous.y - ribbon.width * 0.08);
-          context.lineTo(current.x, current.y - ribbon.width * 0.08);
-          context.strokeStyle = '#ffffff';
-          context.globalAlpha = 0.12;
-          context.lineWidth = Math.max(1, ribbon.width * 0.08);
-          context.stroke();
-        }
+      for (let index = 0; index <= samples; index += 1) {
+        const curvePosition = index / 112;
+        const point = cubicPoint(ribbon.points, curvePosition);
+        const before = cubicPoint(ribbon.points, Math.max(0, curvePosition - 0.006));
+        const after = cubicPoint(ribbon.points, Math.min(1, curvePosition + 0.006));
+        const deltaX = after.x - before.x;
+        const deltaY = after.y - before.y;
+        const length = Math.hypot(deltaX, deltaY) || 1;
+        const normalX = -deltaY / length;
+        const normalY = deltaX / length;
+        const taper = 0.2 + Math.pow(Math.sin(Math.PI * clamp(curvePosition * 0.96)), 0.65) * 0.8;
+        const pulse = 1 + Math.sin(index * 0.72 + ribbonIndex * 1.9) * 0.045;
+        const halfWidth = ribbon.width * taper * pulse * 0.5;
+        leftEdge.push({ x: point.x + normalX * halfWidth, y: point.y + normalY * halfWidth });
+        rightEdge.push({ x: point.x - normalX * halfWidth, y: point.y - normalY * halfWidth });
+        centerLine.push({ x: point.x - normalX * ribbon.width * 0.09, y: point.y - normalY * ribbon.width * 0.09 });
       }
+
+      context.beginPath();
+      context.moveTo(leftEdge[0].x, leftEdge[0].y);
+      leftEdge.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+      rightEdge.reverse().forEach((point) => context.lineTo(point.x, point.y));
+      context.closePath();
+      context.fillStyle = ribbon.color;
+      context.globalAlpha = 0.76;
+      context.fill();
+
+      const tip = centerLine[centerLine.length - 1];
+      context.beginPath();
+      context.arc(tip.x, tip.y, ribbon.width * 0.1, 0, Math.PI * 2);
+      context.fill();
+
+      context.beginPath();
+      context.moveTo(centerLine[0].x, centerLine[0].y);
+      centerLine.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+      context.strokeStyle = '#ffffff';
+      context.globalAlpha = 0.14;
+      context.lineWidth = Math.max(1.2, ribbon.width * 0.065);
+      context.lineJoin = 'round';
+      context.lineCap = 'round';
+      context.stroke();
+    });
+    context.restore();
+  }
+
+  function drawWhorls(progress) {
+    const whorls = [
+      { color: palette[1], delay: 0.29, x: 0.73, y: 0.78, radiusX: 0.13, radiusY: 0.24, width: 26, turns: 1.42 },
+      { color: palette[0], delay: 0.41, x: 0.50, y: 0.90, radiusX: 0.19, radiusY: 0.34, width: 34, turns: 1.30 },
+      { color: palette[2], delay: 0.54, x: 0.27, y: 0.92, radiusX: 0.16, radiusY: 0.29, width: 28, turns: 1.18 }
+    ];
+
+    context.save();
+    context.globalCompositeOperation = 'multiply';
+    whorls.forEach((whorl, index) => {
+      const localProgress = easeOut(clamp((progress - whorl.delay) / (1 - whorl.delay)));
+      if (localProgress <= 0) return;
+      const start = Math.PI * (0.1 + index * 0.08);
+      context.beginPath();
+      context.ellipse(
+        width * whorl.x,
+        height * whorl.y,
+        width * whorl.radiusX,
+        height * whorl.radiusY,
+        0,
+        start,
+        start - Math.PI * whorl.turns * localProgress,
+        true
+      );
+      context.strokeStyle = whorl.color;
+      context.globalAlpha = 0.48;
+      context.lineWidth = whorl.width;
+      context.lineCap = 'round';
+      context.stroke();
     });
     context.restore();
   }
@@ -215,6 +265,7 @@
     lastPaintProgress = clamp(progress);
     context.clearRect(0, 0, width, height);
     drawRibbons(lastPaintProgress);
+    drawWhorls(lastPaintProgress);
     drawSplatters(lastPaintProgress);
     drawGrain(lastPaintProgress);
   }

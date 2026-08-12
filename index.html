@@ -156,15 +156,15 @@
     }
     .finale-footer {
       position: absolute;
-      left: 50%;
+      left: max(20px, calc(50% - 330px));
       bottom: 20px;
-      width: min(calc(100% - 40px), 660px);
+      width: auto;
+      max-width: calc(100% - 40px);
       margin: 0;
       padding: 5px 8px;
       color: #555;
-      background: rgba(255, 255, 255, 0.86);
-      box-shadow: 0 0 18px 12px rgba(255, 255, 255, 0.72);
-      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 0 12px 8px rgba(255, 255, 255, 0.62);
       z-index: 3;
     }
 
@@ -184,12 +184,26 @@
       .section-nav a::before { width: 9px; }
       .paint-finale { height: 180px; margin-top: 38px; }
       .finale-walker {
-        right: 12px;
+        right: 24px;
         bottom: 5px;
         width: 122px;
         height: 146px;
       }
-      .finale-footer { bottom: 15px; }
+      .finale-footer { left: 20px; bottom: 15px; }
+    }
+
+    @media (max-width: 520px) {
+      .header { margin-bottom: 28px; }
+      .voice-bubble {
+        top: 150px;
+        right: 50%;
+        transform: translateX(50%) rotate(-2deg);
+      }
+      .voice-bubble::before {
+        left: 50%;
+        top: -6px;
+        transform: translateX(-50%) rotate(135deg);
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
