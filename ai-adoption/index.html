@@ -127,9 +127,13 @@
     }
 
     .article-figure {
-      width: min(100%, 860px);
-      margin: 32px auto 64px;
+      width: 100%;
+      margin: 26px auto 68px;
     }
+
+    .article-figure.figure-gap { max-width: 540px; }
+    .article-figure.figure-overhang { max-width: 500px; }
+    .article-figure.figure-access { max-width: 460px; }
 
     .article-figure img {
       display: block;
@@ -140,10 +144,10 @@
     }
 
     .article-figure figcaption {
-      max-width: 660px;
-      margin-top: 12px;
+      width: 100%;
+      margin-top: 10px;
       color: var(--muted);
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       line-height: 1.6;
     }
 
@@ -164,13 +168,7 @@
       .site-shell { padding-top: 22px; }
       .back-link { margin-bottom: 34px; }
       .article-header { margin-bottom: 46px; }
-      .article-figure { margin: 24px auto 52px; }
-
-      .article-figure img {
-        width: calc(100% + 16px);
-        max-width: none;
-        margin-left: -8px;
-      }
+      .article-figure { margin: 22px auto 54px; }
     }
   </style>
 </head>
@@ -202,8 +200,8 @@
         </section>
       </div>
 
-      <figure class="article-figure">
-        <img src="../anthropic_graph.jpg" alt="Radar chart comparing theoretical AI coverage with observed AI coverage across occupational sectors.">
+      <figure class="article-figure figure-gap">
+        <img src="../anthropic_graph.jpg" alt="Radar chart comparing theoretical AI coverage with observed AI coverage across occupational sectors." width="925" height="1024" loading="lazy" decoding="async">
         <figcaption>Theoretical exposure to AI remains much larger than observed usage across most occupations.</figcaption>
       </figure>
 
@@ -217,8 +215,8 @@
         </section>
       </div>
 
-      <figure class="article-figure">
-        <img src="../2_openai_capability_overhang.png" alt="Bar chart showing that power users use seven times more thinking capabilities than typical users.">
+      <figure class="article-figure figure-overhang">
+        <img src="../2_openai_capability_overhang.png" alt="Bar chart showing that power users use seven times more thinking capabilities than typical users." width="1600" height="1600" loading="lazy" decoding="async">
         <figcaption>OpenAI's capability overhang: power users draw on substantially more of the available thinking capability.</figcaption>
       </figure>
 
@@ -232,8 +230,8 @@
         </section>
       </div>
 
-      <figure class="article-figure">
-        <img src="../humanity_graoh.png" alt="Grid representing humanity, with most people shown as never having used AI and a small minority shown as chatbot, paid AI, or coding scaffold users.">
+      <figure class="article-figure figure-access">
+        <img src="../humanity_graoh.png" alt="Grid representing humanity, with most people shown as never having used AI and a small minority shown as chatbot, paid AI, or coding scaffold users." width="1048" height="1224" loading="lazy" decoding="async">
         <figcaption>Most people in the world have never used AI, while advanced usage remains concentrated among a very small group.</figcaption>
       </figure>
     </article>

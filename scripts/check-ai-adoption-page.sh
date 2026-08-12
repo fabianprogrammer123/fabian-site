@@ -56,4 +56,17 @@ for file in "$article" "$home"; do
   fi
 done
 
+for text in \
+  'article-figure figure-gap' \
+  'article-figure figure-overhang' \
+  'article-figure figure-access' \
+  'max-width: 540px' \
+  'max-width: 500px' \
+  'max-width: 460px' \
+  'width="925" height="1024" loading="lazy"' \
+  'width="1600" height="1600" loading="lazy"' \
+  'width="1048" height="1224" loading="lazy"'; do
+  require_text "$article" "$text"
+done
+
 printf 'PASS: AI adoption page contract\n'
