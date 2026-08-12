@@ -45,6 +45,27 @@ require_text "$nav" "prefers-reduced-motion: reduce"
 require_text "$nav" 'updateFromScroll'
 
 for text in \
+  'id="journey-paint-layer"' \
+  'id="journey-webgl-layer"' \
+  'class="journey-content"' \
+  'pointer-events: none'; do
+  require_text "$home" "$text"
+done
+
+for script in \
+  'assets/paint-journey-trail.js' \
+  'assets/paint-journey-character.js' \
+  'assets/paint-journey-rope.js' \
+  'assets/paint-journey-particles.js' \
+  'assets/paint-journey.js'; do
+  require_text "$home" "<script src=\"$script\" defer>"
+done
+
+for level in thoughts background now why-this-site portrait; do
+  require_text "$home" "data-journey-level=\"$level\""
+done
+
+for text in \
   'id="paint-finale"' \
   'id="paint-finale-canvas"' \
   'class="finale-walker"' \

@@ -99,7 +99,7 @@
       gap: 8px;
       font-size: 0.76em;
       line-height: 1.35;
-      z-index: 20;
+      z-index: 40;
     }
     .section-nav a {
       color: #888;
@@ -115,6 +115,27 @@
     .section-nav a:hover,
     .section-nav a[aria-current="true"] { color: #222; }
     .section-nav a[aria-current="true"]::before { color: #222; content: "•"; }
+    .journey-paint-layer {
+      position: absolute;
+      inset: 0;
+      width: 100vw;
+      min-height: 100%;
+      margin-left: calc(50% - 50vw);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .journey-webgl-layer {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 30;
+    }
+    .journey-content {
+      position: relative;
+      z-index: 2;
+    }
     .paint-finale {
       position: relative;
       width: 100vw;
@@ -214,6 +235,11 @@
     }
   </style>
   <script src="assets/homepage-navigation.js" defer></script>
+  <script src="assets/paint-journey-trail.js" defer></script>
+  <script src="assets/paint-journey-character.js" defer></script>
+  <script src="assets/paint-journey-rope.js" defer></script>
+  <script src="assets/paint-journey-particles.js" defer></script>
+  <script src="assets/paint-journey.js" defer></script>
   <script src="assets/paint-finale.js" defer></script>
 </head>
 <body>
@@ -225,6 +251,10 @@
   <a href="#thoughts" data-section="thoughts">thoughts</a>
 </nav>
 
+<canvas id="journey-paint-layer" class="journey-paint-layer" aria-hidden="true"></canvas>
+<canvas id="journey-webgl-layer" class="journey-webgl-layer" aria-hidden="true"></canvas>
+
+<main class="journey-content">
 <div class="header">
   <div class="header-text">
     <h1>Fabian Hildesheim</h1>
@@ -234,25 +264,25 @@
       <a href="https://github.com/fabianprogrammer123">github</a>
     </p>
   </div>
-  <div class="photo" role="button" tabindex="0" aria-label="Start Fabian's voice agent">
+  <div class="photo" data-journey-level="portrait" role="button" tabindex="0" aria-label="Start Fabian's voice agent">
     <canvas id="head-dots" width="240" height="240"></canvas>
     <span class="voice-bubble">Click me!</span>
   </div>
 </div>
 
-<h2 id="why-this-site">why this site</h2>
+<h2 id="why-this-site" data-journey-level="why-this-site">why this site</h2>
 <p class="epigraph">"Engagement is the key to understanding." <cite>David Allen</cite></p>
 <p>
   Writing for a public audience creates greater accountability and forces me to articulate my thoughts more clearly than I do in personal Apple Notes. I am convinced this process sharpens thinking, also I really enjoy reading other people's blogs as it is a quite personal interface into the mind. So, there you go...
 </p>
 
-<h2 id="now">now</h2>
+<h2 id="now" data-journey-level="now">now</h2>
 <p class="epigraph">"Don't be afraid to give up the good to go for the great." <cite>John D. Rockefeller</cite></p>
 <p>
   I recently wrapped up my research at Stanford HAI and I'm now on to a new adventure. More to come soon.
 </p>
 
-<h2 id="background">personal background</h2>
+<h2 id="background" data-journey-level="background">personal background</h2>
 <p class="epigraph">"Think like a man of action, act like a man of thought." <cite>Henri Bergson</cite></p>
 <p>
   I grew up in Hamburg. Always loved sports and strategy games. For most of my youth I struggled in school; I was severely dyslexic, unfocused, and rebellious.
@@ -274,7 +304,7 @@
   <li>Co-founded <a href="https://frontier-fellows.com/">Frontier Fellows</a>, a fully funded AI hacker house in Palo Alto supported by a16z, Elias Torres, Sebastian Mejia, and others.</li>
 </ul>
 
-<h2 id="thoughts">thoughts</h2>
+<h2 id="thoughts" data-journey-level="thoughts">thoughts</h2>
 <p class="epigraph">"You miss 100% of the shots you don't take." <cite>Wayne Gretzky</cite></p>
 
 <p>
@@ -304,6 +334,8 @@
 </details>
 
 <hr>
+
+</main>
 
 <section class="paint-finale" id="paint-finale" aria-label="Painted page finale">
   <canvas id="paint-finale-canvas" class="paint-finale__canvas" aria-hidden="true"></canvas>
