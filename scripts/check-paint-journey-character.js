@@ -266,6 +266,22 @@ function testBucketPaintSurfaceTracksSpectrumHue() {
     'bucket color must not fall back to synthetic HSL neon');
 }
 
+function testPaintLeavesFromTheBucketEdge() {
+  const { character } = createCharacter();
+  const lip = character.root.getObjectByName('bucketLip');
+  const spout = character.root.getObjectByName('paint-spout');
+  const spoutForm = character.root.getObjectByName('bucket-spout-form');
+
+  assert.ok(spout, 'bucket must expose a physical paint spout');
+  assert.ok(spoutForm instanceof Mesh,
+    'the pouring edge must have visible dimensional geometry rather than only an invisible origin point');
+  assert.equal(spoutForm.parent, lip, 'the visible spout must move with the bucket rim');
+  assert.equal(character.paintSpout, spout, 'particle origin must use the exposed spout transform');
+  assert.equal(spout.parent, lip, 'paint spout must follow the open bucket rim');
+  assert.ok(Math.abs(spout.position.x) >= 6,
+    'paint spout must sit on the pouring edge instead of the rim centre');
+}
+
 function testFigureUsesCompactHumanProportions() {
   const { character } = createCharacter();
   const shoulder = character.root.getObjectByName('throwing-shoulder');
@@ -327,6 +343,71 @@ function testLadderPoseTransitionsStayContinuous() {
     'bucket arm must leave the climb without snapping');
 }
 
+function testRetrievalBlendsIntoPaintSwing() {
+  const { character } = createCharacter();
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+  const bucketShoulder = character.root.getObjectByName('bucket-shoulder');
+
+  character.setPose('retrieve-ladder', 1, 0);
+  const retrieved = [throwingShoulder.rotation.z, bucketShoulder.rotation.z];
+  character.setPose('paint-swing', 0, 0);
+
+  assert.ok(Math.abs(throwingShoulder.rotation.z - retrieved[0]) < 0.02,
+    'paint swing must begin from the retrieved throwing-arm pose');
+  assert.ok(Math.abs(bucketShoulder.rotation.z - retrieved[1]) < 0.02,
+    'paint swing must begin from the retrieved bucket-arm pose');
+}
+
+function testWalkBlendsIntoTheFirstPaintSwing() {
+  const { character } = createCharacter();
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+  const bucketShoulder = character.root.getObjectByName('bucket-shoulder');
+
+  character.setPose('walk', 1, 0);
+  const walked = [throwingShoulder.rotation.z, bucketShoulder.rotation.z];
+  character.setPose('paint-swing', 0, 1);
+
+  assert.ok(Math.abs(throwingShoulder.rotation.z - walked[0]) < 0.02,
+    'the first bucket swing must begin from the completed walking pose');
+  assert.ok(Math.abs(bucketShoulder.rotation.z - walked[1]) < 0.02,
+    'the bucket arm must enter the first swing without snapping');
+}
+
+function testPaintSwingBlendsIntoLadderDeployment() {
+  const { character } = createCharacter();
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+  const bucketShoulder = character.root.getObjectByName('bucket-shoulder');
+  const bucketElbow = character.root.getObjectByName('bucket-elbow');
+
+  character.setPose('paint-swing', 1, 0);
+  const painted = [throwingShoulder.rotation.z, bucketShoulder.rotation.x, bucketElbow.rotation.z];
+  character.setPose('deploy-ladder', 0, 0);
+
+  assert.ok(Math.abs(throwingShoulder.rotation.z - painted[0]) < 0.02,
+    'ladder deployment must begin from the finished throwing-arm pose');
+  assert.ok(Math.abs(bucketShoulder.rotation.x - painted[1]) < 0.02,
+    'bucket shoulder must not snap out of the swing plane during ladder deployment');
+  assert.ok(Math.abs(bucketElbow.rotation.z - painted[2]) < 0.02,
+    'bucket arm must move into ladder deployment without snapping');
+}
+
+function testFinalPaintSwingBlendsIntoVanish() {
+  const { character } = createCharacter();
+  const bucketShoulder = character.root.getObjectByName('bucket-shoulder');
+  const throwingElbow = character.root.getObjectByName('throwing-elbow');
+
+  character.setPose('paint-swing', 1, 0);
+  const painted = [bucketShoulder.rotation.z, bucketShoulder.rotation.x, throwingElbow.rotation.z];
+  character.setPose('vanish', 0, 0);
+
+  assert.ok(Math.abs(bucketShoulder.rotation.z - painted[0]) < 0.02,
+    'the final bucket arm must enter the disappearance without snapping');
+  assert.ok(Math.abs(bucketShoulder.rotation.x - painted[1]) < 0.02,
+    'the bucket shoulder must not snap out of plane as the figure disappears');
+  assert.ok(Math.abs(throwingElbow.rotation.z - painted[2]) < 0.02,
+    'the final throwing arm must enter the disappearance without snapping');
+}
+
 function testCharacterCanFadeCompletelyAtTheTop() {
   const { character } = createCharacter();
   assert.equal(typeof character.setOpacity, 'function',
@@ -346,9 +427,14 @@ testWalkPlantsAlternatingSupportFeet();
 testBucketFollowsStrideWithPhaseLag();
 testLightsStayInsideCharacterRig();
 testBucketPaintSurfaceTracksSpectrumHue();
+testPaintLeavesFromTheBucketEdge();
 testFigureUsesCompactHumanProportions();
 testWalkAndLadderClimbStayControlled();
 testLadderPoseTransitionsStayContinuous();
+testRetrievalBlendsIntoPaintSwing();
+testWalkBlendsIntoTheFirstPaintSwing();
+testPaintSwingBlendsIntoLadderDeployment();
+testFinalPaintSwingBlendsIntoVanish();
 testCharacterCanFadeCompletelyAtTheTop();
 
 console.log('PASS: paint journey character behavior');

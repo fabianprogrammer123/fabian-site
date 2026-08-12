@@ -6,7 +6,7 @@
   var THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js';
   var LEVEL_ORDER = ['thoughts', 'background', 'now', 'why-this-site', 'portrait'];
   var DURATIONS = {
-    entering: 0.72,
+    entering: 1.25,
     'bottom-paint': 2.35,
     'deploy-ladder': 0.82,
     'climb-ladder': 2.2,
@@ -15,6 +15,7 @@
     vanish: 1.05
   };
   var PAINT_RATES = { pour: 96, swing: 112, drip: 5 };
+  var LANDING_SEGMENTS = 6;
   var NAVIGATION_KEYS = {
     ' ': true,
     Spacebar: true,
@@ -44,11 +45,11 @@
   var failed = false;
   var cancelledBeforeInitialization = false;
   var guidanceEnabled = true;
-  var programmaticScroll = false;
   var state = 'idle';
   window.PaintJourneyState = state;
   var stateStarted = 0;
   var previousTimestamp = 0;
+  var hiddenAt = 0;
   var targetIndex = 1;
   var stateFrom = { x: 0, y: 0 };
   var stateTo = { x: 0, y: 0 };
@@ -61,10 +62,20 @@
   var inputListenersAttached = false;
   var pausedUntilVisible = false;
   var paintedLandingIndex = -1;
+  var landingPaintStep = 0;
+  var landingPathStartStep = 0;
+  var landingNeedsRebase = false;
+  var landingAccentEmitted = false;
+  var landingMode = 0;
+  var landingHue = 0;
+  var landingScale = 1;
+  var landingOrigin = { x: 0, y: 0 };
+  var landingDestination = { x: 0, y: 0 };
   var landingSequence = 0;
   var paintHue = 0;
   var climbDuration = DURATIONS['climb-ladder'];
   var climbCycles = 2;
+  var responsiveMobile = null;
   var previousFlowPoint = { x: 0, y: 0, ready: false };
 
   var THREE = null;
@@ -91,7 +102,13 @@
     emissionCarry = 0;
     flowCarry = 0;
     previousFlowPoint.ready = false;
-    if (nextState === 'bottom-paint' || nextState === 'paint-swing') paintedLandingIndex = -1;
+    if (nextState === 'bottom-paint' || nextState === 'paint-swing') {
+      paintedLandingIndex = -1;
+      landingPaintStep = 0;
+      landingPathStartStep = 0;
+      landingNeedsRebase = false;
+      landingAccentEmitted = false;
+    }
   }
 
   function clamp(value, minimum, maximum) {
@@ -130,7 +147,7 @@
   }
 
   function laneX() {
-    var inset = window.innerWidth <= 520 ? 54 : 66;
+    var inset = window.innerWidth <= 520 ? 12 : 66;
     return documentWidth() - inset;
   }
 
@@ -143,7 +160,7 @@
     };
   }
 
-  function computeWaypoints() {
+  function measureWaypoints() {
     if (!stage) return [];
     var stageRect = stage.getBoundingClientRect();
     var next = [{
@@ -169,17 +186,26 @@
         y: rect.top + scrollY() + rect.height * 0.55
       });
     }
-    waypoints = next;
+    return next;
+  }
+
+  function computeWaypoints() {
+    waypoints = measureWaypoints();
     return waypoints;
   }
 
   function requestFallback(options) {
     var PaintFinale = window.PaintFinale = window.PaintFinale || {};
+    options = options || {};
+    if ((PaintFinale.pendingStart && PaintFinale.pendingStart.staticOnly) ||
+        cancelledBeforeInitialization || state === 'cancelled-rest') {
+      options.staticOnly = true;
+    }
     if (typeof PaintFinale.startFallback === 'function') {
-      PaintFinale.startFallback(options || {});
+      PaintFinale.startFallback(options);
       return;
     }
-    PaintFinale.pendingStart = options || {};
+    PaintFinale.pendingStart = options;
   }
 
   function setLiveStage(isLive) {
@@ -193,7 +219,10 @@
     if (!trailCanvas || typeof PaintJourney.createTrail !== 'function') {
       throw new Error('Paint journey trail is unavailable');
     }
-    trail = PaintJourney.createTrail({ canvas: trailCanvas });
+    trail = PaintJourney.createTrail({
+      canvas: trailCanvas,
+      getAnchors: measureWaypoints
+    });
     computeWaypoints();
   }
 
@@ -232,6 +261,26 @@
     camera.updateProjectionMatrix();
   }
 
+  function isMobileViewport() {
+    return window.innerWidth <= 520;
+  }
+
+  function responsiveLadderMetrics(mobile) {
+    return mobile
+      ? { width: 22, rungSpacing: 18, railRadius: 1.35, rungRadius: 0.95 }
+      : { width: 28, rungSpacing: 21, railRadius: 1.8, rungRadius: 1.25 };
+  }
+
+  function applyResponsiveMetrics() {
+    var mobile = isMobileViewport();
+    if (responsiveMobile === mobile) return;
+    responsiveMobile = mobile;
+    if (ladder && typeof ladder.setMetrics === 'function') {
+      ladder.setMetrics(responsiveLadderMetrics(mobile));
+    }
+    if (particles && typeof particles.setMobile === 'function') particles.setMobile(mobile);
+  }
+
   function recomputeLayout() {
     layoutFrame = 0;
     var previousWaypoints = waypoints.slice();
@@ -240,6 +289,7 @@
     var oldBottom = previousWaypoints[0];
     computeWaypoints();
     resizeRenderer();
+    applyResponsiveMetrics();
     var nextTarget = waypoints[targetIndex];
     var nextSource = waypoints[Math.max(0, targetIndex - 1)];
     var nextBottom = waypoints[0];
@@ -279,6 +329,14 @@
         stateTo.y += targetDeltaY;
       }
     }
+    if ((state === 'bottom-paint' || state === 'paint-swing') && paintedLandingIndex === targetIndex) {
+      landingNeedsRebase = true;
+    }
+    if (state === 'deploy-ladder' || state === 'climb-ladder') {
+      var spacing = isMobileViewport() ? 18 : 21;
+      climbCycles = clamp(Math.round(Math.abs(stateTo.y - stateFrom.y) / (spacing * 2)), 2, 24);
+    }
+    if (state !== 'idle' && state !== 'loading' && state !== 'complete') resetBucketMotion();
   }
 
   function scheduleLayout() {
@@ -296,7 +354,6 @@
 
   function disableGuidance() {
     guidanceEnabled = false;
-    programmaticScroll = false;
   }
 
   function resumeIfTargetVisible() {
@@ -347,6 +404,19 @@
     window.removeEventListener('keydown', handleKeydown);
   }
 
+  function handleVisibilityChange() {
+    var now = window.performance.now();
+    if (document.hidden) {
+      hiddenAt = now;
+      previousTimestamp = 0;
+      return;
+    }
+    if (!hiddenAt) return;
+    stateStarted += now - hiddenAt;
+    hiddenAt = 0;
+    previousTimestamp = 0;
+  }
+
   function guideTowardTarget(target, delta) {
     if (!guidanceEnabled || !target) return;
     var maximumScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -354,13 +424,11 @@
     var current = scrollY();
     var step = Math.max(2, Math.min(Math.abs(desired - current), delta * 520));
     if (Math.abs(desired - current) < 1) return;
-    programmaticScroll = true;
     window.scrollTo({ top: current + Math.sign(desired - current) * step, behavior: 'auto' });
-    window.setTimeout(function () { programmaticScroll = false; }, 0);
   }
 
   function characterScale() {
-    return window.innerWidth <= 520 ? 0.5 : 0.68;
+    return isMobileViewport() ? 0.44 : 0.68;
   }
 
   function positionCharacter(point) {
@@ -381,65 +449,139 @@
     previousFlowPoint.ready = false;
   }
 
+  function configureLandingPath(documentPoint, canvasWidth, mobile) {
+    var sweepDistance = canvasWidth * ((mobile ? 0.68 : 0.7) + landingMode * 0.045);
+    var sweepY = documentPoint.y + (targetIndex % 2 === 0 ? -1 : 1) *
+      (mobile ? 48 : 74) * (0.78 + landingMode * 0.12);
+    landingOrigin.x = documentPoint.x - (mobile ? 2 : 8);
+    landingOrigin.y = documentPoint.y + 4;
+    landingDestination.x = clamp(landingOrigin.x - sweepDistance, 28, canvasWidth - 28);
+    landingDestination.y = clamp(sweepY, 28, document.documentElement.scrollHeight - 28);
+  }
+
   function landingPaint(progress) {
-    if (!trail || !bucketOrigin || !character || progress < 0.26 || paintedLandingIndex === targetIndex) return;
+    if (!trail || !bucketOrigin || !character || progress < 0.2) return;
     scene.updateMatrixWorld(true);
-    character.bucketLip.getWorldPosition(bucketOrigin);
+    character.paintSpout.getWorldPosition(bucketOrigin);
     var documentPoint = { x: 0, y: 0 };
     particlesToDocument(bucketOrigin, documentPoint);
     var canvasWidth = documentWidth();
-    var mobile = window.innerWidth <= 520;
-    var landingMode = landingSequence % 3;
-    var sweepDistance = canvasWidth * ((mobile ? 0.62 : 0.72) + landingMode * 0.07);
-    var sweepY = documentPoint.y + (targetIndex % 2 === 0 ? -1 : 1) * (mobile ? 42 : 68) * (0.8 + landingMode * 0.18);
-    var landingHue = (paintHue + landingSequence * 83) % 360;
-    var scaleVariation = 0.88 + (landingSequence % 3) * 0.07;
-    trail.impact({
-      x: clamp(documentPoint.x - (mobile ? 12 : 22) - landingMode * (mobile ? 8 : 16), 22, canvasWidth - 22),
-      y: documentPoint.y + (mobile ? 12 : 18) + (landingMode - 1) * (mobile ? 5 : 9),
-      hue: landingHue,
-      radius: (mobile ? 42 : 60) * scaleVariation,
-      direction: -1
-    });
-    trail.veil({
-      from: { x: documentPoint.x - 6, y: documentPoint.y + 4 },
-      to: {
-        x: clamp(documentPoint.x - sweepDistance, 28, canvasWidth - 28),
-        y: clamp(sweepY, 28, document.documentElement.scrollHeight - 28)
-      },
-      hue: landingHue + 38,
-      width: (mobile ? 82 : 130) * scaleVariation,
-      alpha: mobile ? 0.12 : 0.15
-    });
+    var mobile = isMobileViewport();
+    if (paintedLandingIndex !== targetIndex) {
+      landingMode = landingSequence % 5;
+      landingHue = (paintHue + landingSequence * 83) % 360;
+      landingScale = 0.86 + (landingSequence % 4) * 0.06;
+      configureLandingPath(documentPoint, canvasWidth, mobile);
+      landingPathStartStep = 0;
+      landingNeedsRebase = false;
+
+      if (landingMode === 0 || landingMode === 1 || landingMode === 4) {
+        trail.impact({
+          x: mobile ? canvasWidth + 6 : clamp(documentPoint.x - 22, 22, canvasWidth - 22),
+          y: documentPoint.y + (mobile ? 9 : 16),
+          hue: landingHue,
+          radius: (mobile ? 34 : (landingMode === 1 ? 46 : 60)) * landingScale,
+          direction: -1
+        });
+      }
+      paintedLandingIndex = targetIndex;
+      landingSequence += 1;
+    } else if (landingNeedsRebase) {
+      configureLandingPath(documentPoint, canvasWidth, mobile);
+      landingPathStartStep = landingPaintStep;
+      landingNeedsRebase = false;
+    }
+
+    var gestureProgress = clamp((progress - 0.2) / 0.7, 0, 1);
+    var visibleStep = Math.min(LANDING_SEGMENTS, Math.floor(gestureProgress * LANDING_SEGMENTS));
+    while (landingPaintStep < visibleStep) {
+      var remainingSteps = Math.max(1, LANDING_SEGMENTS - landingPathStartStep);
+      var fromProgress = (landingPaintStep - landingPathStartStep) / remainingSteps;
+      var toProgress = (landingPaintStep + 1 - landingPathStartStep) / remainingSteps;
+      var segmentFrom = {
+        x: mix(landingOrigin.x, landingDestination.x, fromProgress),
+        y: mix(landingOrigin.y, landingDestination.y, fromProgress)
+      };
+      var segmentTo = {
+        x: mix(landingOrigin.x, landingDestination.x, toProgress),
+        y: mix(landingOrigin.y, landingDestination.y, toProgress)
+      };
+      trail.veil({
+        from: segmentFrom,
+        to: segmentTo,
+        hue: landingHue + 18 + landingPaintStep * 7,
+        width: (mobile ? 88 : 138) * landingScale * (landingMode === 2 ? 1.18 : 1),
+        alpha: mobile ? 0.105 : (landingMode === 3 ? 0.11 : 0.14)
+      });
+      if (landingMode === 3) {
+        trail.ribbon({
+          from: segmentFrom,
+          to: segmentTo,
+          hue: landingHue + 44,
+          width: mobile ? 7 : 11,
+          alpha: 0.42
+        });
+      }
+      landingPaintStep += 1;
+    }
+
+    if (landingAccentEmitted || gestureProgress < 0.78) return;
+    landingAccentEmitted = true;
+    var accentX = mix(landingOrigin.x, landingDestination.x, landingMode === 0 ? 0.64 : 0.48);
+    var accentY = mix(landingOrigin.y, landingDestination.y, landingMode === 0 ? 0.64 : 0.48);
     if (landingMode === 1) {
       trail.spray({
-        x: clamp(documentPoint.x - (mobile ? 76 : 142), 28, canvasWidth - 28),
-        y: documentPoint.y + (targetIndex % 2 ? 22 : -18),
-        hue: landingHue + 128,
-        radius: mobile ? 76 : 126,
-        count: mobile ? 24 : 36
+        x: accentX,
+        y: accentY,
+        hue: landingHue + 56,
+        radius: mobile ? 82 : 132,
+        count: mobile ? 28 : 42
       });
-    } else {
+    } else if (landingMode === 2) {
+      trail.spray({
+        x: accentX,
+        y: accentY,
+        hue: landingHue + 24,
+        radius: mobile ? 104 : 166,
+        count: mobile ? 38 : 58
+      });
+    } else if (landingMode === 4) {
+      trail.spray({
+        x: accentX,
+        y: accentY,
+        hue: landingHue + 68,
+        radius: mobile ? 68 : 108,
+        count: mobile ? 22 : 34
+      });
       trail.whorl({
-        x: clamp(documentPoint.x - (mobile ? 44 : 82) - landingMode * (mobile ? 10 : 22), 28, canvasWidth - 28),
-        y: documentPoint.y + (targetIndex % 2 ? 18 : -10) + landingMode * (mobile ? 8 : 12),
-        hue: landingHue + 126,
-        radius: (mobile ? 30 : 43) * scaleVariation,
-        turns: landingMode === 2 ? 1.16 : 0.76,
+        x: accentX - (mobile ? 10 : 18),
+        y: accentY + (mobile ? 5 : 9),
+        hue: landingHue + 34,
+        radius: mobile ? 24 : 34,
+        turns: 0.62,
+        width: mobile ? 4 : 6,
+        direction: 1,
+        progress: 1
+      });
+    } else if (landingMode === 0) {
+      trail.whorl({
+        x: accentX,
+        y: accentY,
+        hue: landingHue + 42,
+        radius: (mobile ? 32 : 46) * landingScale,
+        turns: 0.84,
         width: mobile ? 5 : 7,
-        direction: landingMode === 2 ? 1 : -1,
+        direction: -1,
         progress: 1
       });
     }
-    landingSequence += 1;
-    paintedLandingIndex = targetIndex;
   }
 
   function updateLadderSpan(progress, anchor) {
     if (!ladder) return;
     scenePointFromDocument(stateFrom, ladderBottom, 23);
     scenePointFromDocument(stateTo, ladderTop, 23);
-    var ladderReach = (window.innerWidth <= 520 ? 48 : 66);
+    var ladderReach = (window.innerWidth <= 520 ? 82 : 110);
     ladderBottom.y -= window.innerWidth <= 520 ? 7 : 10;
     ladderTop.y += ladderReach;
     ladder.setSpan(ladderBottom, ladderTop, {
@@ -450,7 +592,7 @@
 
   function emitPaint(count, wide, progress, delta) {
     scene.updateMatrixWorld(true);
-    character.bucketLip.getWorldPosition(bucketOrigin);
+    character.paintSpout.getWorldPosition(bucketOrigin);
     if (previousBucketOrigin.lengthSq() > 0 && delta > 0) {
       bucketVelocity.copy(bucketOrigin).sub(previousBucketOrigin).multiplyScalar(1 / delta);
       var bucketSpeed = bucketVelocity.length();
@@ -513,8 +655,8 @@
     stateTo.x = target.x;
     stateTo.y = target.y;
     climbDuration = clamp(Math.abs(stateTo.y - stateFrom.y) / 150, 1.45, 3.15);
-    var rungSpacing = window.innerWidth <= 520 ? 18 : 21;
-    climbCycles = clamp(Math.round(Math.abs(stateTo.y - stateFrom.y) / (rungSpacing * 2)), 2, 6);
+    var rungSpacing = isMobileViewport() ? 18 : 21;
+    climbCycles = clamp(Math.round(Math.abs(stateTo.y - stateFrom.y) / (rungSpacing * 2)), 2, 24);
     resetBucketMotion();
     setState('deploy-ladder', timestamp);
   }
@@ -582,10 +724,10 @@
 
     if (state === 'entering') {
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
-      character.setPose('walk', progress, timestamp * 0.008);
+      character.setPose('walk', progress, progress * Math.PI * 4);
     } else if (state === 'bottom-paint') {
       positionCharacter(stateTo);
-      character.setPose('paint-swing', progress, timestamp * 0.003);
+      character.setPose('paint-swing', progress, 1);
       if (progress < 1) emitStream(PAINT_RATES.pour, false, progress, delta);
       if (progress > 0.68 && progress < 1 && !paintBurstEmitted) {
         paintBurstEmitted = true;
@@ -604,7 +746,7 @@
       guideTowardTarget(target, delta);
       updateLadderSpan(1, 'bottom');
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
-      character.setPose('climb-ladder', progress, climbCycles);
+      character.setPose('climb-ladder', eased, climbCycles);
       if (progress > 0.08 && progress < 0.94) emitStream(PAINT_RATES.drip, false, progress, delta);
     } else if (state === 'retrieve-ladder') {
       positionCharacter(stateTo);
@@ -612,7 +754,7 @@
       updateLadderSpan(1 - eased, 'top');
     } else if (state === 'paint-swing') {
       positionCharacter(stateTo);
-      character.setPose('paint-swing', progress, timestamp * 0.003);
+      character.setPose('paint-swing', progress, 0);
       if (progress < 1) emitStream(PAINT_RATES.swing, false, progress, delta);
       if (progress > 0.5 && progress < 1 && !paintBurstEmitted) {
         paintBurstEmitted = true;
@@ -621,7 +763,7 @@
       landingPaint(progress);
     } else if (state === 'vanish') {
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
-      character.setPose('rest', 1, timestamp * 0.0015);
+      character.setPose('vanish', progress, 0);
       character.setOpacity(1 - eased);
       if (progress > 0.16 && !vanishBurstEmitted) {
         vanishBurstEmitted = true;
@@ -644,7 +786,8 @@
   }
 
   function finishLoop() {
-    if (state === 'complete') {
+    if (state === 'complete' || state === 'cancelled-rest') {
+      if (trail && typeof trail.freeze === 'function') trail.freeze();
       cleanupLiveLayer({ preserveStage: true });
       return;
     }
@@ -689,9 +832,10 @@
     if (!character) {
       cancelledBeforeInitialization = true;
       if (bottomObserver) bottomObserver.disconnect();
-      detachInputListeners();
       setState('cancelled-rest', window.performance.now());
-      requestFallback();
+      cleanupLiveLayer();
+      discardTrailLayer();
+      requestFallback({ staticOnly: true });
       return;
     }
     if (!character || state === 'complete' || state === 'cancelled-rest') return;
@@ -712,9 +856,11 @@
     window.removeEventListener('resize', scheduleLayout);
     window.removeEventListener('orientationchange', scheduleLayout);
     document.removeEventListener('toggle', scheduleLayout, true);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('scroll', resumeIfTargetVisible);
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame);
     layoutFrame = 0;
+    hiddenAt = 0;
   }
 
   function cleanupLiveLayer(options) {
@@ -738,11 +884,27 @@
     if (liveCanvas && liveCanvas.parentNode) liveCanvas.parentNode.removeChild(liveCanvas);
   }
 
+  function discardTrailLayer() {
+    if (trail && typeof trail.destroy === 'function') trail.destroy();
+    trail = null;
+    if (trailCanvas) {
+      trailCanvas.width = 1;
+      trailCanvas.height = 1;
+      if (trailCanvas.parentNode) trailCanvas.parentNode.removeChild(trailCanvas);
+    }
+  }
+
   function failLive() {
     if (failed) return;
     failed = true;
     if (bottomObserver) bottomObserver.disconnect();
     cleanupLiveLayer();
+    if (cancelledBeforeInitialization || state === 'cancelled-rest') {
+      discardTrailLayer();
+      requestFallback({ staticOnly: true });
+      return;
+    }
+    if (trail && typeof trail.freeze === 'function') trail.freeze();
     requestFallback();
   }
 
@@ -768,24 +930,27 @@
     resizeRenderer();
 
     character = PaintJourney.createCharacter({ THREE: THREE, scene: scene });
+    var mobile = isMobileViewport();
+    var ladderMetrics = responsiveLadderMetrics(mobile);
     ladder = PaintJourney.createLadder({
       THREE: THREE,
       scene: scene,
-      maxRungs: window.innerWidth <= 520 ? 24 : 36,
-      width: window.innerWidth <= 520 ? 22 : 28,
-      rungSpacing: window.innerWidth <= 520 ? 18 : 21,
-      railRadius: window.innerWidth <= 520 ? 1.35 : 1.8,
-      rungRadius: window.innerWidth <= 520 ? 0.95 : 1.25
+      maxRungs: 128,
+      width: ladderMetrics.width,
+      rungSpacing: ladderMetrics.rungSpacing,
+      railRadius: ladderMetrics.railRadius,
+      rungRadius: ladderMetrics.rungRadius
     });
     particles = PaintJourney.createParticles({
       THREE: THREE,
       scene: scene,
       trail: trail,
-      mobile: window.innerWidth <= 520,
-      capacity: window.innerWidth <= 520 ? 260 : 600,
+      mobile: mobile,
+      capacity: 600,
       pagePlaneZ: 0,
       toDocument: particlesToDocument
     });
+    responsiveMobile = mobile;
     ladderBottom = new THREE.Vector3();
     ladderTop = new THREE.Vector3();
     bucketOrigin = new THREE.Vector3();
@@ -797,11 +962,13 @@
     window.addEventListener('resize', scheduleLayout, { passive: true });
     window.addEventListener('orientationchange', scheduleLayout, { passive: true });
     document.addEventListener('toggle', scheduleLayout, true);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (document.hidden) hiddenAt = window.performance.now();
     computeWaypoints();
     if (waypoints.length !== LEVEL_ORDER.length + 1) throw new Error('Paint journey waypoints are incomplete');
 
     var start = waypoints[0];
-    currentPoint.x = start.x + 180;
+    currentPoint.x = start.x + 96;
     currentPoint.y = start.y;
     stateFrom.x = currentPoint.x;
     stateFrom.y = currentPoint.y;
@@ -822,7 +989,10 @@
     window.removeEventListener('resize', watchForBottom);
     attachInputListeners();
     setState('loading', window.performance.now());
-    import(THREE_URL).then(initializeThree).catch(failLive);
+    var request = typeof PaintJourney.loadThree === 'function'
+      ? PaintJourney.loadThree(THREE_URL)
+      : import(THREE_URL);
+    Promise.resolve(request).then(initializeThree).catch(failLive);
   }
 
   function watchForBottom() {
@@ -844,6 +1014,7 @@
 
   if (reducedMotion) {
     trail.drawStaticSpectrum(waypoints);
+    if (typeof trail.freeze === 'function') trail.freeze();
     requestFallback({ staticOnly: true });
     return;
   }

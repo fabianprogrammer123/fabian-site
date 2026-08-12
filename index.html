@@ -40,7 +40,8 @@
       border: none; border-radius: 0;
       display: flex; align-items: center; justify-content: center;
       color: #aaa; font-size: 0.75em; text-align: center;
-      background: #fff; overflow: visible;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.94) 0 52%, rgba(255, 255, 255, 0.62) 72%, rgba(255, 255, 255, 0) 100%);
+      overflow: visible;
       position: relative; cursor: pointer;
     }
     .photo:focus-visible { outline: 1px solid #999; outline-offset: 4px; }
@@ -106,6 +107,7 @@
       color: #888;
       text-decoration: none;
       transition: color 150ms ease;
+      text-shadow: 0 0 4px #fff, 0 0 8px #fff, 0 0 12px #fff;
     }
     .section-nav a::before {
       content: "·";

@@ -13,6 +13,8 @@ const defaultSelectorBlock = source.match(/DEFAULT_CONTENT_SELECTORS\s*=\s*\[([\
 
 assert.doesNotMatch(defaultSelectorBlock, /'p'|'li'|'a'/,
   'body copy and links must not be hard-erased from the broad paint field');
+assert.doesNotMatch(defaultSelectorBlock, /'\.photo'/,
+  'the portrait must sit over the paint without a hard rectangular erasure');
 
 function createHarness(options = {}) {
   const operations = [];
@@ -24,15 +26,18 @@ function createHarness(options = {}) {
   let resizeObserverCallback = null;
   let resizeObserverTarget = null;
   let selectorQueries = 0;
+  let layoutWidth = options.layoutWidth || 800;
+  let layoutHeight = options.layoutHeight || 2000;
+  let anchorYs = (options.anchorYs || []).slice();
 
   function createContext(recordOperations) {
     const record = recordOperations ? operations : [];
     return {
-      save() {},
-      restore() {},
+      save() { record.push(['save']); },
+      restore() { record.push(['restore']); },
       beginPath() {},
       rect(...args) { record.push(['rect', ...args]); },
-      clip() {},
+      clip() { record.push(['clip']); },
       clearRect(...args) { record.push(['clearRect', ...args]); },
       createRadialGradient() {
         return { addColorStop(position, color) { record.push(['colorStop', position, color]); } };
@@ -47,7 +52,7 @@ function createHarness(options = {}) {
       stroke() { record.push(['stroke']); },
       fill() { record.push(['fill']); },
       fillRect(...args) { record.push(['fillRect', ...args]); },
-      drawImage() {},
+      drawImage(...args) { record.push(['drawImage', ...args]); },
       setTransform(...args) { record.push(['setTransform', ...args]); },
       set lineWidth(value) { record.push(['lineWidth', value]); },
       set strokeStyle(value) { record.push(['strokeStyle', value]); },
@@ -73,8 +78,8 @@ function createHarness(options = {}) {
     }
   };
   const document = {
-    documentElement: { scrollWidth: 1000, scrollHeight: 2000, clientWidth: 800, clientHeight: 600 },
-    body: { scrollWidth: 1000, scrollHeight: 2000 },
+    documentElement: { scrollWidth: 1000, scrollHeight: layoutHeight, clientWidth: layoutWidth, clientHeight: 600 },
+    body: { scrollWidth: 1000, scrollHeight: layoutHeight },
     querySelectorAll() {
       selectorQueries += 1;
       return [content];
@@ -97,10 +102,15 @@ function createHarness(options = {}) {
   };
   if (options.dynamicDocumentWidth) {
     const measuredWidth = () => canvas.style.display === 'none'
-      ? 800
-      : Math.max(800, Number.parseFloat(canvas.style.width) || 0);
+      ? layoutWidth
+      : Math.max(layoutWidth, Number.parseFloat(canvas.style.width) || 0);
     Object.defineProperty(document.documentElement, 'scrollWidth', { get: measuredWidth });
     Object.defineProperty(document.body, 'scrollWidth', { get: measuredWidth });
+  }
+  if (options.dynamicDocumentHeight) {
+    const measuredHeight = () => layoutHeight;
+    Object.defineProperty(document.documentElement, 'scrollHeight', { get: measuredHeight });
+    Object.defineProperty(document.body, 'scrollHeight', { get: measuredHeight });
   }
   const window = {
     PaintJourney: {},
@@ -133,7 +143,10 @@ function createHarness(options = {}) {
   };
 
   vm.runInNewContext(source, { window, document });
-  const trail = window.PaintJourney.createTrail({ canvas });
+  const trail = window.PaintJourney.createTrail({
+    canvas,
+    getAnchors: options.anchorYs ? () => anchorYs.map((y) => ({ y })) : undefined
+  });
   return {
     operations,
     canvas,
@@ -142,7 +155,7 @@ function createHarness(options = {}) {
     journeyContent,
     resizeObserverTarget: () => resizeObserverTarget,
     triggerContentResize() {
-      if (resizeObserverCallback) resizeObserverCallback([{ target: journeyContent }]);
+      if (resizeObserverCallback && resizeObserverTarget) resizeObserverCallback([{ target: journeyContent }]);
     },
     fireWindowEvent(type) {
       for (const listener of windowListeners.get(type) || []) listener({ type });
@@ -152,6 +165,16 @@ function createHarness(options = {}) {
       window.pageXOffset = x;
       window.scrollY = y;
       window.pageYOffset = y;
+    },
+    setLayoutWidth(width) {
+      layoutWidth = width;
+      document.documentElement.clientWidth = width;
+    },
+    setLayoutHeight(height) {
+      layoutHeight = height;
+    },
+    setAnchorYs(nextAnchors) {
+      anchorYs = nextAnchors.slice();
     },
     fireDocumentEvent(type) {
       for (const listener of documentListeners.get(type) || []) listener({ type });
@@ -192,6 +215,26 @@ function testStampsReuseExclusionsUntilResize() {
   assert.equal(harness.selectorQueryCount(), 2, 'stamps must reuse the rebuilt cache');
 }
 
+function testStampBatchSharesOneProtectionPass() {
+  const harness = createHarness();
+  const points = Array.from({ length: 100 }, (_, index) => ({
+    x: 30 + index,
+    y: 70 + index,
+    hue: index * 3,
+    radius: 4,
+    alpha: 0.4
+  }));
+  harness.operations.length = 0;
+
+  assert.equal(typeof harness.trail.stampBatch, 'function', 'trail must expose batched particle impacts');
+  harness.trail.stampBatch(points, points.length);
+
+  assert.equal(harness.operations.filter((operation) => operation[0] === 'clip').length, 1,
+    'one collision frame must share one content-protection clip');
+  assert.equal(harness.operations.filter((operation) => operation[0] === 'arc').length, 100,
+    'batching must preserve every landed paint mark');
+}
+
 function testResizeCanShrinkPastTheOldCanvasWidth() {
   const harness = createHarness({ dynamicDocumentWidth: true });
   harness.canvas.style.width = '1280px';
@@ -200,6 +243,20 @@ function testResizeCanShrinkPastTheOldCanvasWidth() {
 
   assert.equal(harness.canvas.style.width, '800px',
     'measurement must exclude the old backing canvas so a narrower viewport can shrink cleanly');
+}
+
+function testSameSizeResizeKeepsTheExistingBackingStore() {
+  const harness = createHarness();
+  const firstWidth = harness.canvas.width;
+  const firstHeight = harness.canvas.height;
+  harness.operations.length = 0;
+
+  harness.trail.resize();
+
+  assert.equal(harness.canvas.width, firstWidth, 'same-size resize must keep the existing backing width');
+  assert.equal(harness.canvas.height, firstHeight, 'same-size resize must keep the existing backing height');
+  assert.equal(harness.operations.filter((operation) => operation[0] === 'drawImage').length, 0,
+    'same-size resize must not allocate and copy a document-sized temporary canvas');
 }
 
 function testStaticSpectrumUsesLocalExclusions() {
@@ -251,12 +308,91 @@ function testDetailsToggleRefreshesExclusions() {
   assert.equal(harness.selectorQueryCount(), 2, 'details toggle must rebuild exclusions');
 }
 
+function testFreezeStopsContentMaintenanceButKeepsCanvasResponsive() {
+  const harness = createHarness({
+    dynamicDocumentWidth: true,
+    dynamicDocumentHeight: true,
+    layoutWidth: 1200,
+    layoutHeight: 2000
+  });
+  const height = harness.canvas.height;
+  const queryCount = harness.selectorQueryCount();
+
+  assert.equal(typeof harness.trail.freeze, 'function', 'persistent trail must expose maintenance shutdown');
+  harness.trail.freeze();
+  harness.fireWindowEvent('scroll');
+  harness.fireDocumentEvent('toggle');
+  harness.triggerContentResize();
+  harness.flushAnimationFrames();
+
+  assert.equal(harness.selectorQueryCount(), queryCount,
+    'frozen trail must stop observer, scroll, and content exclusion work');
+  assert.equal(harness.canvas.height, height, 'freeze must retain the painted backing store');
+
+  harness.operations.length = 0;
+  harness.setLayoutHeight(2400);
+  harness.triggerContentResize();
+  harness.flushAnimationFrames();
+
+  assert.equal(harness.canvas.style.height, '2400px',
+    'completed paint must extend its backing canvas when content grows');
+  const heightPreservation = harness.operations.find((operation) => operation[0] === 'drawImage');
+  assert.deepEqual(heightPreservation.slice(-2), [1200, 2000],
+    'content growth must preserve existing document-y coordinates instead of stretching the artwork');
+  assert.equal(harness.selectorQueryCount(), queryCount,
+    'post-completion content sizing must remain independent of exclusion scans');
+
+  harness.operations.length = 0;
+  harness.setLayoutWidth(400);
+  harness.fireWindowEvent('resize');
+  harness.flushAnimationFrames();
+
+  assert.equal(harness.canvas.style.width, '400px',
+    'a frozen trail must shrink with the viewport instead of creating horizontal overflow');
+  assert.equal(harness.selectorQueryCount(), queryCount,
+    'post-completion viewport maintenance must not resume costly exclusion scanning');
+  const preservedPaint = harness.operations.find((operation) => operation[0] === 'drawImage');
+  assert.ok(preservedPaint,
+    'responsive resizing must preserve the completed paint rather than clearing it');
+  assert.equal(preservedPaint.length, 10,
+    'responsive preservation must proportionally map the full old canvas into the new canvas');
+  assert.deepEqual(preservedPaint.slice(-2), [400, 2400],
+    'horizontal remapping must retain right-edge paint without distorting document-y positions');
+}
+
+function testCompletedPaintReflowsBetweenSemanticAnchors() {
+  const harness = createHarness({
+    dynamicDocumentWidth: true,
+    dynamicDocumentHeight: true,
+    layoutWidth: 390,
+    layoutHeight: 2200,
+    anchorYs: [120, 520, 980, 1500, 1900, 2160]
+  });
+  const queryCount = harness.selectorQueryCount();
+
+  harness.trail.freeze();
+  harness.operations.length = 0;
+  harness.setLayoutHeight(2580);
+  harness.setAnchorYs([120, 520, 980, 1500, 2280, 2540]);
+  harness.triggerContentResize();
+  harness.flushAnimationFrames();
+
+  const copies = harness.operations.filter((operation) => operation[0] === 'drawImage');
+  assert.ok(copies.length >= 6,
+    'settled artwork must be remapped in semantic page bands rather than copied as one detached bitmap');
+  const bottomBand = copies.at(-1);
+  assert.deepEqual(bottomBand.slice(-4), [0, 2493, 390, 87],
+    'paint at the old finale must follow the finale below newly expanded content');
+  assert.equal(harness.selectorQueryCount(), queryCount,
+    'semantic reflow must stay lightweight after completion');
+}
+
 function testFullDocumentCanvasUsesAPixelBudget() {
   assert.match(source, /pixelBudget/,
     'the persistent full-page trail must clamp its backing store with a pixel budget');
 }
 
-function testWhorlDrawsConnectedFullSpectrumStroke() {
+function testWhorlDrawsConnectedPigmentStroke() {
   const harness = createHarness();
   harness.operations.length = 0;
 
@@ -314,13 +450,17 @@ function testVeilSpreadsTranslucentPaintAcrossThePage() {
 
 testDocumentCoordinatesUseCanvasOrigin();
 testStampsReuseExclusionsUntilResize();
+testStampBatchSharesOneProtectionPass();
 testResizeCanShrinkPastTheOldCanvasWidth();
+testSameSizeResizeKeepsTheExistingBackingStore();
 testStaticSpectrumUsesLocalExclusions();
 testScrollRefreshesExclusionsOncePerFrame();
 testContentResizeRefreshesExclusions();
 testDetailsToggleRefreshesExclusions();
+testFreezeStopsContentMaintenanceButKeepsCanvasResponsive();
+testCompletedPaintReflowsBetweenSemanticAnchors();
 testFullDocumentCanvasUsesAPixelBudget();
-testWhorlDrawsConnectedFullSpectrumStroke();
+testWhorlDrawsConnectedPigmentStroke();
 testImpactCreatesWetPoolDripsAndSatelliteSplatter();
 testVeilSpreadsTranslucentPaintAcrossThePage();
 

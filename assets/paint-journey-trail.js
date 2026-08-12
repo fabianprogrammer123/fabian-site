@@ -2,9 +2,7 @@
   'use strict';
 
   var PaintJourney = window.PaintJourney = window.PaintJourney || {};
-  var DEFAULT_CONTENT_SELECTORS = [
-    'nav', '.photo', '.voice-bubble', '.finale-footer'
-  ];
+  var DEFAULT_CONTENT_SELECTORS = ['.voice-bubble', '.finale-footer'];
   var EXCLUSION_PADDING = 14;
   var PIGMENT_STOPS = [
     [0, 207, 48, 49],
@@ -72,6 +70,7 @@
     }
 
     var contentSelectors = options.contentSelectors || DEFAULT_CONTENT_SELECTORS;
+    var getAnchors = typeof options.getAnchors === 'function' ? options.getAnchors : null;
     var context = canvas.getContext('2d');
     var width = 0;
     var height = 0;
@@ -83,6 +82,75 @@
     var resizeFrame = 0;
     var contentResizeObserver = null;
     var destroyed = false;
+    var frozen = false;
+    var anchorPositions = [];
+
+    function resolveAnchorPositions(nextOriginY, nextHeight) {
+      if (!getAnchors) return [];
+      var anchors;
+      try {
+        anchors = getAnchors();
+      } catch (error) {
+        return [];
+      }
+      if (!Array.isArray(anchors)) return [];
+      return anchors.map(function (anchor) {
+        var y = Number(anchor && anchor.y !== undefined ? anchor.y : anchor);
+        return Number.isFinite(y) ? Math.max(0, Math.min(nextHeight, y - nextOriginY)) : null;
+      }).filter(function (y) { return y !== null; });
+    }
+
+    function anchorBands(previousAnchors, nextAnchors, previousHeight, nextHeight) {
+      if (!previousAnchors.length || previousAnchors.length !== nextAnchors.length) return [];
+      var pairs = [{ previous: 0, next: 0 }];
+      for (var index = 0; index < previousAnchors.length; index += 1) {
+        pairs.push({ previous: previousAnchors[index], next: nextAnchors[index] });
+      }
+      pairs.push({ previous: previousHeight, next: nextHeight });
+      pairs.sort(function (a, b) { return a.previous - b.previous; });
+
+      var normalized = [];
+      for (var pairIndex = 0; pairIndex < pairs.length; pairIndex += 1) {
+        var pair = pairs[pairIndex];
+        pair.previous = Math.max(0, Math.min(previousHeight, pair.previous));
+        pair.next = Math.max(0, Math.min(nextHeight, pair.next));
+        var last = normalized[normalized.length - 1];
+        if (last && Math.abs(pair.previous - last.previous) < 0.5) {
+          last.next = Math.max(last.next, pair.next);
+          continue;
+        }
+        if (last) pair.next = Math.max(last.next, pair.next);
+        normalized.push(pair);
+      }
+      return normalized;
+    }
+
+    function copyResponsivePaint(previous, previousAnchors, nextAnchors, previousHeight, nextHeight) {
+      var bands = anchorBands(previousAnchors, nextAnchors, previousHeight, nextHeight);
+      if (bands.length < 2) {
+        context.drawImage(previous, 0, 0, previous.width, previous.height, 0, 0, width, previousHeight);
+        return;
+      }
+      for (var index = 1; index < bands.length; index += 1) {
+        var from = bands[index - 1];
+        var to = bands[index];
+        var sourceTop = Math.round(from.previous / previousHeight * previous.height);
+        var sourceBottom = Math.round(to.previous / previousHeight * previous.height);
+        var sourceHeight = Math.max(1, sourceBottom - sourceTop);
+        var destinationHeight = Math.max(0.5, to.next - from.next);
+        context.drawImage(
+          previous,
+          0,
+          sourceTop,
+          previous.width,
+          sourceHeight,
+          0,
+          from.next,
+          width,
+          destinationHeight
+        );
+      }
+    }
 
     function getExclusionZones() {
       var selectors = contentSelectors.join(',');
@@ -165,6 +233,19 @@
       var point = options || {};
       if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
       withContentProtection(function () { paintStamp(point); });
+    }
+
+    function stampBatch(points, count) {
+      if (destroyed || !points || !points.length) return;
+      var requested = count === undefined ? points.length : Math.floor(Number(count));
+      var limit = Math.min(points.length, Math.max(0, Number.isFinite(requested) ? requested : points.length));
+      if (!limit) return;
+      withContentProtection(function () {
+        for (var index = 0; index < limit; index += 1) {
+          var point = points[index];
+          if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) paintStamp(point);
+        }
+      });
     }
 
     function ribbon(options) {
@@ -253,7 +334,7 @@
           context.beginPath();
           context.moveTo(startX, startY);
           context.lineTo(endX, endY);
-          context.strokeStyle = rgba(baseHue + start * 360, 0.72, 0.04 - start * 0.08);
+          context.strokeStyle = rgba(baseHue + start * 92, 0.72, 0.04 - start * 0.08);
           context.globalAlpha = 0.72 - start * 0.22;
           context.lineWidth = strokeWidth * (1 - start * 0.46) * (0.9 + seeded(index + baseHue) * 0.2);
           context.stroke();
@@ -502,13 +583,39 @@
       context.clearRect(0, 0, width, height);
     }
 
-    function resize() {
+    function resize(options) {
       if (destroyed) return;
+      options = options || {};
       var previousDisplay = canvas.style.display || '';
       canvas.style.display = 'none';
       var nextSize = documentSize();
       canvas.style.display = previousDisplay;
       var nextDpr = Math.min(1.5, Math.max(1, window.devicePixelRatio || 1));
+      var pixelBudget = nextSize.width <= 520 ? 4500000 : 12000000;
+      nextDpr = Math.min(nextDpr, Math.sqrt(pixelBudget / Math.max(1, nextSize.width * nextSize.height)));
+      nextDpr = Math.max(0.75, nextDpr);
+      var nextBackingWidth = Math.max(1, Math.ceil(nextSize.width * nextDpr));
+      var nextBackingHeight = Math.max(1, Math.ceil(nextSize.height * nextDpr));
+      var previousAnchors = anchorPositions.slice();
+
+      if (canvas.width === nextBackingWidth && canvas.height === nextBackingHeight) {
+        width = nextSize.width;
+        height = nextSize.height;
+        dpr = nextDpr;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        var unchangedRect = canvas.getBoundingClientRect();
+        originX = unchangedRect.left + (window.scrollX || window.pageXOffset || 0);
+        originY = unchangedRect.top + (window.scrollY || window.pageYOffset || 0);
+        anchorPositions = resolveAnchorPositions(originY, height);
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (!options.skipExclusions) {
+          rebuildExclusions();
+          clearExclusionZones();
+        }
+        return;
+      }
+
       var previous = null;
       if (canvas.width && canvas.height) {
         previous = document.createElement('canvas');
@@ -516,36 +623,44 @@
         previous.height = canvas.height;
         previous.getContext('2d').drawImage(canvas, 0, 0);
       }
-      var previousWidth = width || nextSize.width;
       var previousHeight = height || nextSize.height;
       width = nextSize.width;
       height = nextSize.height;
-      var pixelBudget = width <= 520 ? 4500000 : 12000000;
-      dpr = Math.min(nextDpr, Math.sqrt(pixelBudget / Math.max(1, width * height)));
-      dpr = Math.max(0.75, dpr);
-      canvas.width = Math.max(1, Math.ceil(width * dpr));
-      canvas.height = Math.max(1, Math.ceil(height * dpr));
+      dpr = nextDpr;
+      canvas.width = nextBackingWidth;
+      canvas.height = nextBackingHeight;
       canvas.style.width = width + 'px';
       canvas.style.height = height + 'px';
       var canvasRect = canvas.getBoundingClientRect();
       originX = canvasRect.left + (window.scrollX || window.pageXOffset || 0);
       originY = canvasRect.top + (window.scrollY || window.pageYOffset || 0);
+      var nextAnchors = resolveAnchorPositions(originY, height);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
-      if (previous) context.drawImage(previous, 0, 0, previousWidth, previousHeight);
-      rebuildExclusions();
-      clearExclusionZones();
+      if (previous) {
+        copyResponsivePaint(previous, previousAnchors, nextAnchors, previousHeight, height);
+      }
+      anchorPositions = nextAnchors;
+      if (!options.skipExclusions) {
+        rebuildExclusions();
+        clearExclusionZones();
+      }
     }
 
     function scheduleResize() {
       if (resizeFrame || destroyed) return;
       resizeFrame = window.requestAnimationFrame(function () {
         resizeFrame = 0;
-        resize();
+        resize({ skipExclusions: frozen });
       });
     }
 
+    function scheduleSettledResize() {
+      scheduleResize();
+      window.requestAnimationFrame(scheduleResize);
+    }
+
     function scheduleExclusionRefresh() {
-      if (exclusionFrame || destroyed) return;
+      if (exclusionFrame || destroyed || frozen) return;
       exclusionFrame = window.requestAnimationFrame(function () {
         exclusionFrame = 0;
         rebuildExclusions();
@@ -553,14 +668,30 @@
       });
     }
 
-    function destroy() {
-      if (destroyed) return;
-      destroyed = true;
+    function freeze() {
+      if (frozen || destroyed) return;
+      frozen = true;
       if (exclusionFrame) window.cancelAnimationFrame(exclusionFrame);
       if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      exclusionFrame = 0;
+      resizeFrame = 0;
+      if (contentResizeObserver) contentResizeObserver.disconnect();
+      if (typeof window.ResizeObserver === 'function' && journeyContent) {
+        contentResizeObserver = new window.ResizeObserver(scheduleSettledResize);
+        contentResizeObserver.observe(journeyContent);
+      }
+      window.removeEventListener('scroll', scheduleExclusionRefresh);
+      document.removeEventListener('toggle', scheduleResize, true);
+      document.addEventListener('toggle', scheduleSettledResize, true);
+    }
+
+    function destroy() {
+      if (destroyed) return;
+      freeze();
+      destroyed = true;
       if (contentResizeObserver) contentResizeObserver.disconnect();
       document.removeEventListener('toggle', scheduleResize, true);
-      window.removeEventListener('scroll', scheduleExclusionRefresh);
+      document.removeEventListener('toggle', scheduleSettledResize, true);
       window.removeEventListener('resize', scheduleResize);
       window.removeEventListener('orientationchange', scheduleResize);
     }
@@ -580,12 +711,14 @@
       resize: resize,
       clear: clear,
       stamp: stamp,
+      stampBatch: stampBatch,
       ribbon: ribbon,
       spray: spray,
       whorl: whorl,
       impact: impact,
       veil: veil,
       drawStaticSpectrum: drawStaticSpectrum,
+      freeze: freeze,
       destroy: destroy
     };
   };

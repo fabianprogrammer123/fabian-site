@@ -54,6 +54,7 @@ for text in \
   'id="journey-webgl-layer"' \
   'class="journey-content"' \
   'text-shadow: 0 0 3px #fff' \
+  'radial-gradient(circle, rgba(255, 255, 255, 0.94)' \
   '.paint-finale.is-live' \
   'pointer-events: none'; do
   require_text "$home" "$text"

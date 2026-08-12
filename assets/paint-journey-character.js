@@ -191,6 +191,16 @@
     var bucketRim = joint('bucket-rim', bucket, 0, 9, 0);
     var bucketLip = joint('bucketLip', bucketRim);
     mesh('bucket-lip-form', new THREE.TorusGeometry(9.1, 1.1, 5, 12), charcoal, bucketLip, 0, 0, 0, 1, 1, 0.72);
+    var bucketSpoutForm = mesh(
+      'bucket-spout-form',
+      new THREE.CylinderGeometry(0.6, 3, 5.2, 3, 1, false),
+      charcoal,
+      bucketLip,
+      9.6, 0.55, 0,
+      1, 1, 0.76
+    );
+    bucketSpoutForm.rotation.z = -PI / 2;
+    var paintSpout = joint('paint-spout', bucketLip, 12.2, 0.55, 0);
     var handle = mesh('bucket-handle', new THREE.TorusGeometry(9.6, 0.9, 5, 16), charcoal, bucket, 0, 5, 0);
     handle.scale.y = 1.22;
     handle.rotation.x = PI / 2;
@@ -301,10 +311,10 @@
       contactShadow.visible = false;
       pelvis.position.y -= Math.sin(t * PI) * 2;
       spine.rotation.z = -0.055 * t + settle;
-      throwingArm.shoulder.rotation.z = 0.42 + 0.5 * t;
-      throwingArm.elbow.rotation.z = 0.62 + 0.18 * t;
-      bucketArm.shoulder.rotation.z = -0.28 - 0.38 * t;
-      bucketArm.elbow.rotation.z = -0.48 - 0.15 * t;
+      throwingArm.shoulder.rotation.z = 0.92 * t;
+      throwingArm.elbow.rotation.z = -0.12 + 0.92 * t;
+      bucketArm.shoulder.rotation.z = -0.35 - 0.31 * t;
+      bucketArm.elbow.rotation.z = 0.42 - 1.05 * t;
       leftLeg.hip.rotation.z = -0.11 * t;
       rightLeg.hip.rotation.z = 0.14 * t;
       leftLeg.knee.rotation.z = -0.18 * t;
@@ -353,18 +363,28 @@
     }
 
     function posePaintSwing(progress, phase) {
-      var arc = Math.sin(phase + progress * PI);
-      var follow = Math.cos(phase + progress * PI);
-      pelvis.rotation.y = -arc * 0.18;
-      spine.rotation.z = -arc * 0.22;
-      bucketArm.shoulder.rotation.z = -0.35 + arc * 1.65;
-      bucketArm.shoulder.rotation.x = follow * 0.38;
-      bucketArm.elbow.rotation.z = 0.42 + arc * 0.6;
-      bucketArm.wrist.rotation.z = -arc * 0.48;
-      bucketPose.rotation.z = -arc * 0.7;
-      throwingArm.shoulder.rotation.z = -arc * 0.6;
-      leftLeg.hip.rotation.z = -arc * 0.16;
-      rightLeg.hip.rotation.z = arc * 0.16;
+      var entry = smooth(clamp01(progress / 0.18));
+      var arc = Math.sin(progress * PI);
+      var shoulderDepth = Math.sin(progress * PI * 2);
+      var startsFromWalk = phase >= 0.5;
+      var bucketShoulderStart = startsFromWalk ? 0 : -1.2;
+      var bucketElbowStart = startsFromWalk ? 0.15 : -0.4;
+      var bucketPoseStart = startsFromWalk ? 0.058 : -0.03;
+      var throwingShoulderStart = startsFromWalk ? 0 : 1.45;
+      var throwingElbowStart = startsFromWalk ? -0.12 : 0.47;
+      pelvis.rotation.y = -arc * 0.18 * entry;
+      spine.rotation.z = -arc * 0.22 * entry;
+      bucketArm.shoulder.rotation.z = bucketShoulderStart +
+        (-0.35 + arc * 1.65 - bucketShoulderStart) * entry;
+      bucketArm.shoulder.rotation.x = shoulderDepth * 0.38 * entry;
+      bucketArm.elbow.rotation.z = bucketElbowStart + (0.42 + arc * 0.6 - bucketElbowStart) * entry;
+      bucketArm.wrist.rotation.z = -arc * 0.48 * entry;
+      bucketPose.rotation.z = bucketPoseStart + (-arc * 0.7 - bucketPoseStart) * entry;
+      throwingArm.shoulder.rotation.z = throwingShoulderStart +
+        (-arc * 0.6 - throwingShoulderStart) * entry;
+      throwingArm.elbow.rotation.z = throwingElbowStart + (-0.12 - throwingElbowStart) * entry;
+      leftLeg.hip.rotation.z = -arc * 0.16 * entry;
+      rightLeg.hip.rotation.z = arc * 0.16 * entry;
     }
 
     function poseRest(progress, phase) {
@@ -381,6 +401,19 @@
       leftLeg.knee.rotation.z = -0.08;
     }
 
+    function poseVanish(progress) {
+      var t = smooth(progress);
+      pelvis.position.y -= 2 * t;
+      pelvis.rotation.z = -0.045 * t;
+      spine.rotation.z = 0.08 * t;
+      throwingArm.shoulder.rotation.z = -0.14 * t;
+      throwingArm.elbow.rotation.z = -0.12 - 0.06 * t;
+      bucketArm.shoulder.rotation.z = -0.35 + 0.57 * t;
+      bucketArm.elbow.rotation.z = 0.42 - 0.14 * t;
+      bucketPose.rotation.z = -0.08 * t;
+      leftLeg.knee.rotation.z = -0.08 * t;
+    }
+
     function setPose(name, progress, phase) {
       if (disposed) return;
       resetPose();
@@ -394,6 +427,7 @@
         case 'climb-ladder': poseClimbLadder(progress, phase); break;
         case 'retrieve-ladder': poseRetrieveLadder(progress); break;
         case 'paint-swing': posePaintSwing(progress, phase); break;
+        case 'vanish': poseVanish(progress); break;
         case 'rest': poseRest(progress, phase); break;
         default: poseRest(progress, phase);
       }
@@ -505,6 +539,7 @@
     return {
       root: root,
       bucketLip: bucketLip,
+      paintSpout: paintSpout,
       throwingHand: throwingHand,
       setPose: setPose,
       setScreenPose: setScreenPose,

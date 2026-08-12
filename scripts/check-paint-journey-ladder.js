@@ -41,6 +41,13 @@ class Object3D {
   }
   add(object) { object.parent = this; this.children.push(object); }
   remove(object) { object.parent = null; this.children = this.children.filter((child) => child !== object); }
+  updateMatrix() {
+    this.matrix = {
+      position: this.position.clone(),
+      scale: this.scale.clone(),
+      quaternion: { alignmentCount: this.quaternion.alignmentCount }
+    };
+  }
 }
 
 class Group extends Object3D {}
@@ -55,22 +62,47 @@ class Material {
 class Mesh extends Object3D {
   constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; }
 }
+class InstancedMesh extends Mesh {
+  constructor(geometry, material, capacity) {
+    super(geometry, material);
+    this.capacity = capacity;
+    this.count = 0;
+    this.matrices = [];
+    this.instanceMatrix = { needsUpdate: false };
+  }
+  setMatrixAt(index, matrix) {
+    this.matrices[index] = {
+      position: matrix.position.clone(),
+      scale: matrix.scale.clone(),
+      quaternion: { alignmentCount: matrix.quaternion.alignmentCount }
+    };
+  }
+}
 
 const THREE = {
   Vector3,
   Group,
+  Object3D,
   Mesh,
+  InstancedMesh,
   CylinderGeometry: Geometry,
   MeshStandardMaterial: Material,
   MeshBasicMaterial: Material
 };
 
-function createLadder() {
+function createLadder(overrides = {}) {
   const window = {};
   const scene = new Group();
   vm.runInNewContext(source, { window, Math, Number, Object, Array, Error });
   return {
-    ladder: window.PaintJourney.createLadder({ THREE, scene, maxRungs: 12, width: 24, rungSpacing: 20 }),
+    ladder: window.PaintJourney.createLadder({
+      THREE,
+      scene,
+      maxRungs: 12,
+      width: 24,
+      rungSpacing: 20,
+      ...overrides
+    }),
     scene
   };
 }
@@ -79,14 +111,18 @@ function testLadderUsesDimensionalRailsAndRungs() {
   const { scene } = createLadder();
   const group = scene.children[0];
   const railBodies = group.children.filter((child) => child.name.startsWith('ladder-rail-body'));
-  const rungBodies = group.children.filter((child) => child.name.startsWith('ladder-rung-body'));
+  const rungBodies = group.children.filter((child) => child.name === 'ladder-rungs');
 
   assert.ok(group instanceof Group, 'ladder root must be a Three.js group');
   assert.equal(group.name, 'paint-journey-ladder');
   assert.equal(railBodies.length, 2, 'ladder must have two dimensional rails');
-  assert.equal(rungBodies.length, 12, 'ladder must pool enough dimensional rungs for long climbs');
+  assert.equal(rungBodies.length, 1, 'all ladder rungs must share one instanced draw call');
+  assert.ok(rungBodies[0] instanceof InstancedMesh,
+    'dense ladder rungs must use Three.js instancing');
   assert.ok(railBodies.concat(rungBodies).every((mesh) => mesh instanceof Mesh),
     'rails and rungs must render as real meshes');
+  assert.ok(rungBodies[0].capacity >= 64,
+    'the one instanced rung pool must cover long mobile climbs without allocating new meshes');
 }
 
 function testDeploymentExtendsFromTheGround() {
@@ -96,11 +132,11 @@ function testDeploymentExtendsFromTheGround() {
   const top = { x: 120, y: 270, z: 4 };
 
   ladder.setSpan(bottom, top, { progress: 0.5, anchor: 'bottom' });
-  const visibleRungs = group.children.filter((child) => child.name.startsWith('ladder-rung-body') && child.visible);
+  const rungInstances = group.children.find((child) => child.name === 'ladder-rungs');
   const rails = group.children.filter((child) => child.name.startsWith('ladder-rail-body'));
 
   assert.equal(group.visible, true, 'deployment must reveal the ladder');
-  assert.ok(visibleRungs.length >= 4 && visibleRungs.length < 12,
+  assert.ok(rungInstances.count >= 4 && rungInstances.count < 12,
     'partial deployment must reveal only reached rungs');
   assert.ok(rails.every((rail) => rail.scale.y > 100 && rail.scale.y < 140),
     'rail length must reflect partial vertical deployment');
@@ -112,8 +148,8 @@ function testTopAnchoredRetractionHideAndDispose() {
   const { ladder, scene } = createLadder();
   const group = scene.children[0];
   ladder.setSpan({ x: 90, y: 20, z: 2 }, { x: 90, y: 220, z: 2 }, { progress: 0.4, anchor: 'top' });
-  const visibleRungs = group.children.filter((child) => child.name.startsWith('ladder-rung-body') && child.visible);
-  assert.ok(visibleRungs.length > 0, 'top-anchored retraction must keep upper rungs visible');
+  const rungInstances = group.children.find((child) => child.name === 'ladder-rungs');
+  assert.ok(rungInstances.count > 0, 'top-anchored retraction must keep upper rungs visible');
 
   ladder.hide();
   assert.equal(group.visible, false, 'hide must remove the ladder from view');
@@ -126,9 +162,55 @@ function testSpanAnimationReusesScratchVectors() {
     'ladder deployment must not allocate cloned vectors on every animation frame');
 }
 
+function testLongSpanKeepsClimbableRungDensity() {
+  const { ladder, scene } = createLadder({ rungSpacing: 18 });
+  const group = scene.children[0];
+
+  ladder.setSpan(
+    { x: 80, y: 20, z: 2 },
+    { x: 80, y: 1040, z: 2 },
+    { progress: 1, anchor: 'bottom' }
+  );
+
+  const rungInstances = group.children.find((child) => child.name === 'ladder-rungs');
+  const visibleRungs = rungInstances.matrices
+    .slice(0, rungInstances.count)
+    .sort((a, b) => a.position.y - b.position.y);
+
+  assert.ok(visibleRungs.length >= 50,
+    'a 1020px climb must retain at least 50 visible rungs');
+
+  const gaps = visibleRungs.slice(1).map((rung, index) =>
+    rung.position.y - visibleRungs[index].position.y);
+  assert.ok(gaps.every((gap) => gap >= 16 && gap <= 20),
+    'long-span rung gaps must stay within the climbable 16-20px range');
+}
+
+function testResponsiveMetricsUpdateTheExistingInstancedLadder() {
+  const { ladder, scene } = createLadder({ rungSpacing: 21, width: 28 });
+  const group = scene.children[0];
+  const rungInstances = group.children.find((child) => child.name === 'ladder-rungs');
+
+  assert.equal(typeof ladder.setMetrics, 'function',
+    'the active ladder must adapt when the viewport crosses the mobile breakpoint');
+  ladder.setMetrics({ rungSpacing: 18, width: 22, railRadius: 1.35, rungRadius: 0.95 });
+  ladder.setSpan(
+    { x: 80, y: 20, z: 2 },
+    { x: 80, y: 380, z: 2 },
+    { progress: 1, anchor: 'bottom' }
+  );
+
+  assert.equal(rungInstances.count, 20,
+    'mobile metrics must immediately use mobile rung cadence');
+  assert.ok(rungInstances.matrices[0].scale.y < 25,
+    'mobile metrics must narrow the existing ladder without rebuilding meshes');
+}
+
 testLadderUsesDimensionalRailsAndRungs();
 testDeploymentExtendsFromTheGround();
 testTopAnchoredRetractionHideAndDispose();
 testSpanAnimationReusesScratchVectors();
+testLongSpanKeepsClimbableRungDensity();
+testResponsiveMetricsUpdateTheExistingInstancedLadder();
 
 console.log('PASS: paint journey ladder behavior');

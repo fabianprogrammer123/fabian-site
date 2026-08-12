@@ -42,9 +42,10 @@
     }
 
     var mobile = Boolean(options.mobile);
-    var maximum = mobile ? 260 : 600;
+    var maximum = 600;
     var requestedCapacity = Math.floor(Number(options.capacity) || maximum);
     var capacity = Math.max(1, Math.min(maximum, requestedCapacity));
+    var activeLimit = Math.min(capacity, mobile ? 260 : 600);
     var positions = new Float32Array(capacity * 3);
     var colors = new Float32Array(capacity * 3);
     var velocityX = new Float32Array(capacity);
@@ -110,6 +111,11 @@
     var scenePoint = new THREE.Vector3();
     var documentPoint = { x: 0, y: 0 };
     var stampPayload = { x: 0, y: 0, hue: 0, radius: 0, alpha: 0 };
+    var collisionBatch = [];
+    for (var batchIndex = 0; batchIndex < capacity; batchIndex += 1) {
+      collisionBatch.push({ x: 0, y: 0, hue: 0, radius: 0, alpha: 0 });
+    }
+    var collisionCount = 0;
 
     function random() {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -128,7 +134,8 @@
       color.setRGB(
         Math.min(1, pigment.r / 255 * variation + chalk),
         Math.min(1, pigment.g / 255 * variation + chalk),
-        Math.min(1, pigment.b / 255 * variation + chalk)
+        Math.min(1, pigment.b / 255 * variation + chalk),
+        THREE.SRGBColorSpace
       );
       var offset = index * 3;
       colors[offset] = color.r;
@@ -141,7 +148,7 @@
       var emissionScale = frameAverage > 22 ? 0.48 : 1;
       var requested = Math.max(0, Math.floor(Number(config.count) || (widerCone ? 42 : 8)));
       var count = Math.max(requested > 0 ? 1 : 0, Math.floor(requested * emissionScale));
-      count = Math.min(count, capacity - activeCount);
+      count = Math.min(count, activeLimit - activeCount);
       var origin = config.origin;
       var velocity = config.velocity || {};
       var bucketVelocity = config.bucketVelocity || {};
@@ -160,7 +167,10 @@
         velocityY[index] = component(velocity, 'y') + component(bucketVelocity, 'y') + (random() - 0.5) * spread;
         velocityZ[index] = component(velocity, 'z') + component(bucketVelocity, 'z') - (0.3 + random()) * depthSpread;
         life[index] = (widerCone ? 0.65 : 0.9) + random() * (widerCone ? 0.55 : 0.85);
-        particleHue[index] = (baseHue + emitted * (widerCone ? 360 / Math.max(1, count) : 5.5)) % 360;
+        var pigmentOffset = widerCone
+          ? ((emitted / Math.max(1, count - 1)) - 0.5) * 84
+          : emitted * 5.5;
+        particleHue[index] = (baseHue + pigmentOffset + 360) % 360;
         documentX[index] = 0;
         documentY[index] = 0;
         setParticleColor(index, particleHue[index]);
@@ -221,14 +231,15 @@
       documentY[index] = Number(documentPoint.y) || 0;
     }
 
-    function stampParticle(index, speed) {
+    function queueParticleStamp(index, speed) {
       mapToDocument(index);
-      stampPayload.x = documentX[index];
-      stampPayload.y = documentY[index];
-      stampPayload.hue = particleHue[index];
-      stampPayload.radius = Math.min(mobile ? 9 : 13, 3 + speed * 0.018);
-      stampPayload.alpha = 0.48;
-      trail.stamp(stampPayload);
+      var payload = collisionBatch[collisionCount];
+      payload.x = documentX[index];
+      payload.y = documentY[index];
+      payload.hue = particleHue[index];
+      payload.radius = Math.min(mobile ? 9 : 13, 3 + speed * 0.018);
+      payload.alpha = 0.48;
+      collisionCount += 1;
     }
 
     function update(delta) {
@@ -238,6 +249,7 @@
       hue = (hue + delta * 52) % 360;
       var damping = Math.exp(-drag * delta);
       var index = 0;
+      collisionCount = 0;
 
       while (index < activeCount) {
         var offset = index * 3;
@@ -253,7 +265,7 @@
 
         if (previousZ > pagePlaneZ && positions[offset + 2] <= pagePlaneZ) {
           var speed = Math.sqrt(velocityX[index] * velocityX[index] + velocityY[index] * velocityY[index]);
-          stampParticle(index, speed);
+          queueParticleStamp(index, speed);
           retire(index);
           continue;
         }
@@ -264,6 +276,17 @@
         index += 1;
       }
 
+      if (collisionCount > 0) {
+        if (typeof trail.stampBatch === 'function') {
+          trail.stampBatch(collisionBatch, collisionCount);
+        } else {
+          for (var stampIndex = 0; stampIndex < collisionCount; stampIndex += 1) {
+            stampPayload = collisionBatch[stampIndex];
+            trail.stamp(stampPayload);
+          }
+        }
+      }
+
       geometry.setDrawRange(0, activeCount);
       positionAttribute.needsUpdate = true;
       colorAttribute.needsUpdate = true;
@@ -272,6 +295,15 @@
     function setHue(nextHue) {
       nextHue = Number(nextHue);
       if (Number.isFinite(nextHue)) hue = ((nextHue % 360) + 360) % 360;
+    }
+
+    function setMobile(nextMobile) {
+      if (disposed) return;
+      mobile = Boolean(nextMobile);
+      activeLimit = Math.min(capacity, mobile ? 260 : 600);
+      material.size = mobile ? 5.8 : 7.8;
+      while (activeCount > activeLimit) retire(activeCount - 1);
+      geometry.setDrawRange(0, activeCount);
     }
 
     function clear() {
@@ -291,7 +323,15 @@
       if (dropletTexture && typeof dropletTexture.dispose === 'function') dropletTexture.dispose();
     }
 
-    var api = { emit: emit, burst: burst, update: update, setHue: setHue, clear: clear, dispose: dispose };
+    var api = {
+      emit: emit,
+      burst: burst,
+      update: update,
+      setHue: setHue,
+      setMobile: setMobile,
+      clear: clear,
+      dispose: dispose
+    };
     Object.defineProperty(api, 'activeCount', { enumerable: true, get: function () { return activeCount; } });
     return api;
   };
