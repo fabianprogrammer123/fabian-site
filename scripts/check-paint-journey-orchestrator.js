@@ -19,6 +19,14 @@ requirePattern(/previousBucketOrigin\.set\(0,\s*0,\s*0\)/,
   'each new paint phase must reset bucket velocity history');
 requirePattern(/cancelledBeforeInitialization/,
   'Escape must cancel a journey while Three.js is still loading');
+requirePattern(/function\s+atDocumentBottom\s*\([^)]*\)[\s\S]{0,500}maximumScroll[\s\S]{0,300}<=\s*2/,
+  'the live journey must wait until the visitor is truly at the document bottom');
+requirePattern(/addEventListener\('scroll',\s*watchForBottom/,
+  'the bottom trigger must keep watching after the finale first enters the viewport');
+requirePattern(/rootMargin:\s*'0px'/,
+  'the finale observer must not expand its viewport trigger area');
+assert.doesNotMatch(source, /rootMargin:\s*'0px 0px 40% 0px'/,
+  'a positive bottom observer margin starts the finale before the visitor reaches the bottom');
 requirePattern(/function\s+pauseUntilTargetVisible\s*\(/,
   'manual guidance cancellation must pause an offscreen journey');
 requirePattern(/function\s+pauseUntilTargetVisible\s*\([^)]*\)\s*\{[\s\S]{0,500}activeCount/,

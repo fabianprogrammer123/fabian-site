@@ -39,6 +39,7 @@
   var trail = null;
   var waypoints = [];
   var bottomObserver = null;
+  var bottomStageNear = false;
   var layoutFrame = 0;
   var frameRequest = 0;
   var active = false;
@@ -112,6 +113,14 @@
 
   function scrollY() {
     return window.scrollY || window.pageYOffset || 0;
+  }
+
+  function atDocumentBottom() {
+    var root = document.documentElement;
+    var body = document.body;
+    var documentHeight = Math.max(root.scrollHeight, body ? body.scrollHeight : 0);
+    var maximumScroll = Math.max(0, documentHeight - window.innerHeight);
+    return maximumScroll - scrollY() <= 2;
   }
 
   function laneX(index) {
@@ -717,9 +726,16 @@
   function beginLoading() {
     if (state !== 'idle') return;
     if (bottomObserver) bottomObserver.disconnect();
+    window.removeEventListener('scroll', watchForBottom);
+    window.removeEventListener('resize', watchForBottom);
     attachInputListeners();
     setState('loading', window.performance.now());
     import(THREE_URL).then(initializeThree).catch(failLive);
+  }
+
+  function watchForBottom() {
+    if (state !== 'idle' || !bottomStageNear || !atDocumentBottom()) return;
+    beginLoading();
   }
 
   if (!stage || !liveCanvas || !trailCanvas) {
@@ -742,15 +758,20 @@
 
   if ('IntersectionObserver' in window) {
     bottomObserver = new window.IntersectionObserver(function (entries) {
+      bottomStageNear = false;
       for (var index = 0; index < entries.length; index += 1) {
         if (entries[index].isIntersecting) {
-          beginLoading();
-          return;
+          bottomStageNear = true;
+          break;
         }
       }
-    }, { rootMargin: '0px 0px 40% 0px', threshold: 0.05 });
+      watchForBottom();
+    }, { rootMargin: '0px', threshold: 0.05 });
     bottomObserver.observe(stage);
   } else {
-    beginLoading();
+    bottomStageNear = true;
   }
+  window.addEventListener('scroll', watchForBottom, { passive: true });
+  window.addEventListener('resize', watchForBottom, { passive: true });
+  watchForBottom();
 }(window, document));
