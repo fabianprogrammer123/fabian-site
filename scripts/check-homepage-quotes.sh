@@ -17,8 +17,13 @@ require_section_quote() {
   section=$1
   quote=$2
   awk -v section="$section" -v quote="$quote" '
-    $0 == "<h2>" section "</h2>" { in_section = 1; next }
-    in_section && /^<h2>/ { exit }
+    $0 ~ /^<h2[^>]*>/ {
+      heading = $0
+      sub(/^<h2[^>]*>/, "", heading)
+      sub(/<\/h2>$/, "", heading)
+      if (heading == section) { in_section = 1; next }
+    }
+    in_section && /^<h2[^>]*>/ { exit }
     in_section && index($0, quote) { found = 1; exit }
     END { exit found ? 0 : 1 }
   ' "$home" || {

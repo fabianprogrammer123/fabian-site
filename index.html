@@ -16,8 +16,10 @@
       background: #fff;
     }
     a { color: #222; }
+    a:focus-visible { outline: 1px solid #222; outline-offset: 4px; }
     h1 { font-size: 1.3em; margin-bottom: 4px; }
     h2 { font-size: 1em; margin-top: 32px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+    h2[id] { scroll-margin-top: 72px; }
     p { font-size: 0.95em; }
     ul { font-size: 0.95em; padding-left: 22px; }
     li { margin: 6px 0; }
@@ -88,9 +90,62 @@
       border-left: 2px solid #e0e0e0;
     }
     .epigraph cite { font-style: normal; }
+    .section-nav {
+      position: fixed;
+      top: 48px;
+      left: max(24px, calc(50vw - 520px));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 0.76em;
+      line-height: 1.35;
+      z-index: 20;
+    }
+    .section-nav a {
+      color: #888;
+      text-decoration: none;
+      transition: color 150ms ease;
+    }
+    .section-nav a::before {
+      content: "·";
+      display: inline-block;
+      width: 14px;
+      color: transparent;
+    }
+    .section-nav a:hover,
+    .section-nav a[aria-current="true"] { color: #222; }
+    .section-nav a[aria-current="true"]::before { color: #222; content: "•"; }
+
+    @media (max-width: 979px) {
+      .section-nav {
+        position: sticky;
+        top: 0;
+        margin: -40px -20px 28px;
+        padding: 10px 20px;
+        overflow-x: auto;
+        flex-direction: row;
+        gap: 18px;
+        white-space: nowrap;
+        background: rgba(255, 255, 255, 0.96);
+        border-bottom: 1px solid #e3e3e3;
+      }
+      .section-nav a::before { width: 9px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .section-nav a { transition: none; }
+    }
   </style>
+  <script src="assets/homepage-navigation.js" defer></script>
 </head>
 <body>
+
+<nav class="section-nav" aria-label="On this page">
+  <a href="#why-this-site" data-section="why-this-site" aria-current="true">why this site</a>
+  <a href="#now" data-section="now">now</a>
+  <a href="#background" data-section="background">background</a>
+  <a href="#thoughts" data-section="thoughts">thoughts</a>
+</nav>
 
 <div class="header">
   <div class="header-text">
@@ -98,8 +153,7 @@
     <p class="meta">
       <a href="https://www.linkedin.com/in/fabian-hildesheim/">linkedin</a> &middot;
       <a href="https://x.com/xyz_fabianh">x</a> &middot;
-      <a href="https://github.com/fabianprogrammer123">github</a> &middot;
-      <a href="CV.pdf">cv</a>
+      <a href="https://github.com/fabianprogrammer123">github</a>
     </p>
   </div>
   <div class="photo" role="button" tabindex="0" aria-label="Start Fabian's voice agent">
@@ -108,19 +162,19 @@
   </div>
 </div>
 
-<h2>why this site</h2>
+<h2 id="why-this-site">why this site</h2>
 <p class="epigraph">"Engagement is the key to understanding." <cite>David Allen</cite></p>
 <p>
   Writing for a public audience creates greater accountability and forces me to articulate my thoughts more clearly than I do in personal Apple Notes. I am convinced this process sharpens thinking, also I really enjoy reading other people's blogs as it is a quite personal interface into the mind. So, there you go...
 </p>
 
-<h2>now</h2>
+<h2 id="now">now</h2>
 <p class="epigraph">"Don't be afraid to give up the good to go for the great." <cite>John D. Rockefeller</cite></p>
 <p>
   I recently wrapped up my research at Stanford HAI and I'm now on to a new adventure. More to come soon.
 </p>
 
-<h2>personal background</h2>
+<h2 id="background">personal background</h2>
 <p class="epigraph">"Think like a man of action, act like a man of thought." <cite>Henri Bergson</cite></p>
 <p>
   I grew up in Hamburg. Always loved sports and strategy games. For most of my youth I struggled in school; I was severely dyslexic, unfocused, and rebellious.
@@ -142,7 +196,7 @@
   <li>Co-founded <a href="https://frontier-fellows.com/">Frontier Fellows</a>, a fully funded AI hacker house in Palo Alto supported by a16z, Elias Torres, Sebastian Mejia, and others.</li>
 </ul>
 
-<h2>thoughts</h2>
+<h2 id="thoughts">thoughts</h2>
 <p class="epigraph">"You miss 100% of the shots you don't take." <cite>Wayne Gretzky</cite></p>
 
 <p>
