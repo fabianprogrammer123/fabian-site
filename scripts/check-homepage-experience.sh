@@ -7,6 +7,7 @@ home="$root/index.html"
 nav="$root/assets/homepage-navigation.js"
 finale="$root/assets/paint-finale.js"
 trail="$root/assets/paint-journey-trail.js"
+character="$root/assets/paint-journey-character.js"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -120,5 +121,23 @@ for text in \
 done
 
 node "$root/scripts/check-paint-journey-trail.js"
+
+test -f "$character" || fail "missing assets/paint-journey-character.js"
+
+for text in \
+  'PaintJourney.createCharacter' \
+  'bucketLip' \
+  'throwingHand' \
+  'walk' \
+  'coil-rope' \
+  'throw-rope' \
+  'brace' \
+  'climb' \
+  'pull-bucket' \
+  'paint-swing' \
+  'rest' \
+  'dispose'; do
+  require_text "$character" "$text"
+done
 
 printf 'PASS: homepage CV and navigation contract\n'
