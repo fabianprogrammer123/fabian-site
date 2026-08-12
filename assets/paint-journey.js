@@ -6,17 +6,15 @@
   var THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js';
   var LEVEL_ORDER = ['thoughts', 'background', 'now', 'why-this-site', 'portrait'];
   var DURATIONS = {
-    entering: 0.8,
-    'bottom-paint': 2.2,
-    walk: 0.9,
-    'coil-rope': 0.6,
-    'throw-rope': 0.8,
-    brace: 0.45,
-    climb: 2.35,
-    'pull-bucket': 0.85,
-    'paint-swing': 1.45
+    entering: 0.72,
+    'bottom-paint': 2.35,
+    'deploy-ladder': 0.82,
+    'climb-ladder': 2.2,
+    'retrieve-ladder': 0.58,
+    'paint-swing': 1.55,
+    vanish: 1.05
   };
-  var PAINT_RATES = { pour: 96, swing: 112, drip: 7 };
+  var PAINT_RATES = { pour: 96, swing: 112, drip: 5 };
   var NAVIGATION_KEYS = {
     ' ': true,
     Spacebar: true,
@@ -56,23 +54,28 @@
   var stateTo = { x: 0, y: 0 };
   var currentPoint = { x: 0, y: 0 };
   var cancelPoint = { x: 0, y: 0 };
-  var ropeThrown = false;
   var paintBurstEmitted = false;
+  var vanishBurstEmitted = false;
   var emissionCarry = 0;
+  var flowCarry = 0;
   var inputListenersAttached = false;
   var pausedUntilVisible = false;
   var paintedLandingIndex = -1;
+  var landingSequence = 0;
   var paintHue = 0;
+  var climbDuration = DURATIONS['climb-ladder'];
+  var climbCycles = 2;
+  var previousFlowPoint = { x: 0, y: 0, ready: false };
 
   var THREE = null;
   var renderer = null;
   var camera = null;
   var scene = null;
   var character = null;
-  var rope = null;
+  var ladder = null;
   var particles = null;
-  var ropeOrigin = null;
-  var ropeAnchor = null;
+  var ladderBottom = null;
+  var ladderTop = null;
   var bucketOrigin = null;
   var previousBucketOrigin = null;
   var bucketVelocity = null;
@@ -82,9 +85,12 @@
     state = nextState;
     stateStarted = Number(timestamp) || window.performance.now();
     window.PaintJourneyState = state;
-    ropeThrown = false;
+    if (stage) stage.setAttribute('data-journey-state', state);
     paintBurstEmitted = false;
+    vanishBurstEmitted = false;
     emissionCarry = 0;
+    flowCarry = 0;
+    previousFlowPoint.ready = false;
     if (nextState === 'bottom-paint' || nextState === 'paint-swing') paintedLandingIndex = -1;
   }
 
@@ -123,23 +129,16 @@
     return maximumScroll - scrollY() <= 2;
   }
 
-  function laneX(index) {
-    var inset = window.innerWidth <= 520 ? 52 : 70;
-    return index % 2 === 0 ? inset : documentWidth() - inset;
+  function laneX() {
+    var inset = window.innerWidth <= 520 ? 54 : 66;
+    return documentWidth() - inset;
   }
 
   function portraitPoint(element, rect) {
-    var pageLeft = rect.left + scrollX();
-    var pageRight = rect.right + scrollX();
-    var characterHalfWidth = window.innerWidth <= 520 ? 38 : 58;
-    var preferredRight = pageRight + (window.innerWidth <= 520 ? 46 : 78);
-    var x = preferredRight + characterHalfWidth <= documentWidth()
-      ? preferredRight
-      : pageLeft - (window.innerWidth <= 520 ? 44 : 72);
     return {
       name: 'portrait',
       element: element,
-      x: clamp(x, characterHalfWidth, documentWidth() - characterHalfWidth),
+      x: laneX(),
       y: rect.top + scrollY() + rect.height * 0.82
     };
   }
@@ -150,7 +149,7 @@
     var next = [{
       name: 'bottom',
       element: stage,
-      x: laneX(1),
+      x: laneX(),
       y: stageRect.top + scrollY() + stageRect.height - 18
     }];
 
@@ -166,7 +165,7 @@
       next.push({
         name: name,
         element: element,
-        x: laneX(index),
+        x: laneX(),
         y: rect.top + scrollY() + rect.height * 0.55
       });
     }
@@ -235,24 +234,51 @@
 
   function recomputeLayout() {
     layoutFrame = 0;
-    var oldTarget = waypoints[targetIndex];
+    var previousWaypoints = waypoints.slice();
+    var oldTarget = previousWaypoints[targetIndex];
+    var oldSource = previousWaypoints[Math.max(0, targetIndex - 1)];
+    var oldBottom = previousWaypoints[0];
     computeWaypoints();
     resizeRenderer();
     var nextTarget = waypoints[targetIndex];
-    if (nextTarget && oldTarget) {
-      var targetDeltaX = nextTarget.x - oldTarget.x;
+    var nextSource = waypoints[Math.max(0, targetIndex - 1)];
+    var nextBottom = waypoints[0];
+    if (nextTarget && oldTarget && nextSource && oldSource) {
+      var laneDeltaX = nextTarget.x - oldTarget.x;
+      var sourceDeltaY = nextSource.y - oldSource.y;
       var targetDeltaY = nextTarget.y - oldTarget.y;
-      if (state === 'walk' || state === 'climb') {
-        stateTo.x += targetDeltaX;
+
+      if (state !== 'idle' && state !== 'loading' && state !== 'complete') {
+        currentPoint.x += laneDeltaX;
+        stateFrom.x += laneDeltaX;
+        stateTo.x += laneDeltaX;
+      }
+
+      if (state === 'entering' || state === 'bottom-paint') {
+        var bottomDeltaY = nextBottom && oldBottom ? nextBottom.y - oldBottom.y : 0;
+        currentPoint.y += bottomDeltaY;
+        stateFrom.y += bottomDeltaY;
+        stateTo.y += bottomDeltaY;
+      } else if (state === 'await-target') {
+        currentPoint.y += sourceDeltaY;
+      } else if (state === 'deploy-ladder' || state === 'climb-ladder') {
+        var oldSpan = oldTarget.y - oldSource.y;
+        var pathProgress = Math.abs(oldSpan) > 0.001
+          ? clamp((currentPoint.y - oldSource.y) / oldSpan, 0, 1)
+          : 0;
+        currentPoint.y = mix(nextSource.y, nextTarget.y, pathProgress);
+        stateFrom.y += sourceDeltaY;
+        stateTo.y += targetDeltaY;
+      } else if (state === 'retrieve-ladder' || state === 'paint-swing') {
+        currentPoint.y += targetDeltaY;
+        stateFrom.y += sourceDeltaY;
+        stateTo.y += targetDeltaY;
+      } else if (state === 'vanish') {
+        currentPoint.y += targetDeltaY;
+        stateFrom.y += targetDeltaY;
         stateTo.y += targetDeltaY;
       }
-      if (state === 'portrait-rest') {
-        currentPoint.x = nextTarget.x;
-        currentPoint.y = nextTarget.y;
-        if (character) positionCharacter(currentPoint, 1);
-      }
     }
-    if (state === 'portrait-rest' && !active && renderer && scene && camera) renderer.render(scene, camera);
   }
 
   function scheduleLayout() {
@@ -268,11 +294,6 @@
     layoutFrame = window.requestAnimationFrame(recomputeLayout);
   }
 
-  function scheduleRestLayout() {
-    if (state !== 'portrait-rest' || active) return;
-    scheduleLayout();
-  }
-
   function disableGuidance() {
     guidanceEnabled = false;
     programmaticScroll = false;
@@ -283,6 +304,7 @@
     pausedUntilVisible = false;
     window.removeEventListener('scroll', resumeIfTargetVisible);
     if (!active && renderer) {
+      enterDeploy(window.performance.now());
       active = true;
       previousTimestamp = 0;
       frameRequest = window.requestAnimationFrame(frame);
@@ -338,17 +360,17 @@
   }
 
   function characterScale() {
-    return window.innerWidth <= 520 ? 0.62 : 0.88;
+    return window.innerWidth <= 520 ? 0.5 : 0.68;
   }
 
-  function positionCharacter(point, facing) {
+  function positionCharacter(point) {
     currentPoint.x = point.x;
     currentPoint.y = point.y;
     character.setScreenPose({
       x: point.x - scrollX(),
       y: window.innerHeight - (point.y - scrollY()),
       scale: characterScale(),
-      facing: facing,
+      facing: -1,
       depth: 32
     });
   }
@@ -356,6 +378,7 @@
   function resetBucketMotion() {
     if (previousBucketOrigin) previousBucketOrigin.set(0, 0, 0);
     if (bucketVelocity) bucketVelocity.set(0, 0, 0);
+    previousFlowPoint.ready = false;
   }
 
   function landingPaint(progress) {
@@ -364,32 +387,65 @@
     character.bucketLip.getWorldPosition(bucketOrigin);
     var documentPoint = { x: 0, y: 0 };
     particlesToDocument(bucketOrigin, documentPoint);
-    var laneDirection = documentPoint.x < documentWidth() / 2 ? 1 : -1;
-    trail.whorl({
-      x: clamp(documentPoint.x + laneDirection * (window.innerWidth <= 520 ? 10 : 24), 22, documentWidth() - 22),
-      y: documentPoint.y + 20,
-      hue: paintHue,
-      radius: window.innerWidth <= 520 ? 46 : 78,
-      turns: 1.42,
-      width: window.innerWidth <= 520 ? 11 : 20,
-      direction: laneDirection,
-      progress: 1
+    var canvasWidth = documentWidth();
+    var mobile = window.innerWidth <= 520;
+    var landingMode = landingSequence % 3;
+    var sweepDistance = canvasWidth * ((mobile ? 0.62 : 0.72) + landingMode * 0.07);
+    var sweepY = documentPoint.y + (targetIndex % 2 === 0 ? -1 : 1) * (mobile ? 42 : 68) * (0.8 + landingMode * 0.18);
+    var landingHue = (paintHue + landingSequence * 83) % 360;
+    var scaleVariation = 0.88 + (landingSequence % 3) * 0.07;
+    trail.impact({
+      x: clamp(documentPoint.x - (mobile ? 12 : 22) - landingMode * (mobile ? 8 : 16), 22, canvasWidth - 22),
+      y: documentPoint.y + (mobile ? 12 : 18) + (landingMode - 1) * (mobile ? 5 : 9),
+      hue: landingHue,
+      radius: (mobile ? 42 : 60) * scaleVariation,
+      direction: -1
     });
-    trail.spray({
-      x: documentPoint.x,
-      y: documentPoint.y + 16,
-      hue: paintHue + 150,
-      count: window.innerWidth <= 520 ? 15 : 28,
-      radius: window.innerWidth <= 520 ? 42 : 68
+    trail.veil({
+      from: { x: documentPoint.x - 6, y: documentPoint.y + 4 },
+      to: {
+        x: clamp(documentPoint.x - sweepDistance, 28, canvasWidth - 28),
+        y: clamp(sweepY, 28, document.documentElement.scrollHeight - 28)
+      },
+      hue: landingHue + 38,
+      width: (mobile ? 82 : 130) * scaleVariation,
+      alpha: mobile ? 0.12 : 0.15
     });
+    if (landingMode === 1) {
+      trail.spray({
+        x: clamp(documentPoint.x - (mobile ? 76 : 142), 28, canvasWidth - 28),
+        y: documentPoint.y + (targetIndex % 2 ? 22 : -18),
+        hue: landingHue + 128,
+        radius: mobile ? 76 : 126,
+        count: mobile ? 24 : 36
+      });
+    } else {
+      trail.whorl({
+        x: clamp(documentPoint.x - (mobile ? 44 : 82) - landingMode * (mobile ? 10 : 22), 28, canvasWidth - 28),
+        y: documentPoint.y + (targetIndex % 2 ? 18 : -10) + landingMode * (mobile ? 8 : 12),
+        hue: landingHue + 126,
+        radius: (mobile ? 30 : 43) * scaleVariation,
+        turns: landingMode === 2 ? 1.16 : 0.76,
+        width: mobile ? 5 : 7,
+        direction: landingMode === 2 ? 1 : -1,
+        progress: 1
+      });
+    }
+    landingSequence += 1;
     paintedLandingIndex = targetIndex;
   }
 
-  function updateRopeEndpoints(target) {
-    scene.updateMatrixWorld(true);
-    character.throwingHand.getWorldPosition(ropeOrigin);
-    scenePointFromDocument(target, ropeAnchor, 34);
-    rope.setEndpoints(ropeOrigin, ropeAnchor);
+  function updateLadderSpan(progress, anchor) {
+    if (!ladder) return;
+    scenePointFromDocument(stateFrom, ladderBottom, 23);
+    scenePointFromDocument(stateTo, ladderTop, 23);
+    var ladderReach = (window.innerWidth <= 520 ? 48 : 66);
+    ladderBottom.y -= window.innerWidth <= 520 ? 7 : 10;
+    ladderTop.y += ladderReach;
+    ladder.setSpan(ladderBottom, ladderTop, {
+      progress: progress,
+      anchor: anchor || 'bottom'
+    });
   }
 
   function emitPaint(count, wide, progress, delta) {
@@ -403,11 +459,8 @@
       bucketVelocity.set(0, 0, 0);
     }
     previousBucketOrigin.copy(bucketOrigin);
-    paintHue = (paintHue + (wide ? 22 : 7) + delta * 80) % 360;
-    if (character.setPaintHue) character.setPaintHue(paintHue);
-    particles.setHue(paintHue);
     paintVelocity.set(
-      wide ? (targetIndex % 2 ? -165 : 165) : -55,
+      wide ? -190 : -62,
       wide ? 65 + Math.sin(progress * Math.PI) * 85 : 15,
       wide ? -205 : -145
     );
@@ -415,10 +468,30 @@
       origin: bucketOrigin,
       velocity: paintVelocity,
       bucketVelocity: bucketVelocity,
-      count: count
+      count: count,
+      hue: paintHue
     };
     if (wide) particles.burst(config);
     else particles.emit(config);
+
+    flowCarry += delta;
+    if (flowCarry >= (window.innerWidth <= 520 ? 0.13 : 0.09)) {
+      var documentPoint = { x: 0, y: 0 };
+      particlesToDocument(bucketOrigin, documentPoint);
+      if (previousFlowPoint.ready) {
+        trail.ribbon({
+          from: { x: previousFlowPoint.x, y: previousFlowPoint.y },
+          to: { x: documentPoint.x - (wide ? 24 : 8), y: documentPoint.y + (wide ? 18 : 8) },
+          hue: paintHue,
+          width: wide ? (window.innerWidth <= 520 ? 10 : 15) : (window.innerWidth <= 520 ? 5 : 8),
+          alpha: wide ? 0.48 : 0.34
+        });
+      }
+      previousFlowPoint.x = documentPoint.x;
+      previousFlowPoint.y = documentPoint.y;
+      previousFlowPoint.ready = true;
+      flowCarry = 0;
+    }
   }
 
   function emitStream(rate, wide, progress, delta) {
@@ -429,18 +502,33 @@
     emitPaint(count, wide, progress, delta);
   }
 
-  function enterWalk(timestamp) {
+  function enterDeploy(timestamp) {
     var target = waypoints[targetIndex];
     if (!target) {
-      setState('portrait-rest', timestamp);
+      setState('vanish', timestamp);
       return;
     }
     stateFrom.x = currentPoint.x;
     stateFrom.y = currentPoint.y;
     stateTo.x = target.x;
-    stateTo.y = currentPoint.y;
+    stateTo.y = target.y;
+    climbDuration = clamp(Math.abs(stateTo.y - stateFrom.y) / 150, 1.45, 3.15);
+    var rungSpacing = window.innerWidth <= 520 ? 18 : 21;
+    climbCycles = clamp(Math.round(Math.abs(stateTo.y - stateFrom.y) / (rungSpacing * 2)), 2, 6);
     resetBucketMotion();
-    setState('walk', timestamp);
+    setState('deploy-ladder', timestamp);
+  }
+
+  function awaitTarget(timestamp) {
+    setState('await-target', timestamp);
+  }
+
+  function enterVanish(timestamp) {
+    stateFrom.x = currentPoint.x;
+    stateFrom.y = currentPoint.y;
+    stateTo.x = currentPoint.x;
+    stateTo.y = currentPoint.y - (window.innerWidth <= 520 ? 24 : 38);
+    setState('vanish', timestamp);
   }
 
   function advanceState(timestamp) {
@@ -450,47 +538,53 @@
         setState('bottom-paint', timestamp);
         break;
       case 'bottom-paint':
-        if (guidanceEnabled || targetIsVisible(targetIndex)) enterWalk(timestamp);
+        if (guidanceEnabled || targetIsVisible(targetIndex)) enterDeploy(timestamp);
+        else awaitTarget(timestamp);
         break;
-      case 'walk': setState('coil-rope', timestamp); break;
-      case 'coil-rope': setState('throw-rope', timestamp); break;
-      case 'throw-rope': setState('brace', timestamp); break;
-      case 'brace':
-        stateFrom.x = currentPoint.x;
-        stateFrom.y = currentPoint.y;
-        stateTo.x = waypoints[targetIndex].x;
-        stateTo.y = waypoints[targetIndex].y;
-        setState('climb', timestamp);
+      case 'deploy-ladder':
+        setState('climb-ladder', timestamp);
         break;
-      case 'climb': setState('pull-bucket', timestamp); break;
-      case 'pull-bucket':
-        if (rope) rope.hide();
+      case 'climb-ladder':
+        setState('retrieve-ladder', timestamp);
+        break;
+      case 'retrieve-ladder':
+        if (ladder) ladder.hide();
         resetBucketMotion();
         setState('paint-swing', timestamp);
         break;
       case 'paint-swing':
         if (targetIndex >= waypoints.length - 1) {
-          setState('portrait-rest', timestamp);
-        } else if (guidanceEnabled || targetIsVisible(targetIndex + 1)) {
+          enterVanish(timestamp);
+        } else {
           targetIndex += 1;
-          enterWalk(timestamp);
+          if (guidanceEnabled || targetIsVisible(targetIndex)) enterDeploy(timestamp);
+          else awaitTarget(timestamp);
         }
+        break;
+      case 'vanish':
+        if (character) character.setOpacity(0);
+        if (ladder) ladder.hide();
+        setState('complete', timestamp);
         break;
     }
   }
 
   function updateJourney(timestamp, delta) {
-    var duration = DURATIONS[state] || 1;
+    var frameState = state;
+    var duration = state === 'climb-ladder' ? climbDuration : (DURATIONS[state] || 1);
     var progress = clamp((timestamp - stateStarted) / (duration * 1000), 0, 1);
     var eased = ease(progress);
     var target = waypoints[targetIndex] || waypoints[waypoints.length - 1];
-    var facing = target && target.x < currentPoint.x ? -1 : 1;
+
+    paintHue = (paintHue + delta * 76) % 360;
+    if (character && character.setPaintHue) character.setPaintHue(paintHue);
+    if (particles) particles.setHue(paintHue);
 
     if (state === 'entering') {
-      positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) }, -1);
+      positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
       character.setPose('walk', progress, timestamp * 0.008);
     } else if (state === 'bottom-paint') {
-      positionCharacter(stateTo, -1);
+      positionCharacter(stateTo);
       character.setPose('paint-swing', progress, timestamp * 0.003);
       if (progress < 1) emitStream(PAINT_RATES.pour, false, progress, delta);
       if (progress > 0.68 && progress < 1 && !paintBurstEmitted) {
@@ -498,39 +592,26 @@
         emitPaint(window.innerWidth <= 520 ? 44 : 72, true, progress, delta);
       }
       landingPaint(progress);
-    } else if (state === 'walk') {
-      positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: stateFrom.y }, facing);
-      character.setPose('walk', progress, timestamp * 0.009);
-      if (progress > 0.1 && progress < 0.92) emitStream(PAINT_RATES.drip, false, progress, delta);
-    } else if (state === 'coil-rope') {
-      positionCharacter(stateTo, facing);
-      character.setPose('coil-rope', progress, timestamp * 0.006);
-    } else if (state === 'throw-rope') {
-      positionCharacter(stateTo, facing);
-      character.setPose('throw-rope', progress, timestamp * 0.006);
-      scene.updateMatrixWorld(true);
-      if (!ropeThrown) {
-        ropeThrown = true;
-        character.throwingHand.getWorldPosition(ropeOrigin);
-        scenePointFromDocument(target, ropeAnchor, 34);
-        rope.throwBetween(ropeOrigin, ropeAnchor, DURATIONS['throw-rope'] * 0.88);
-      }
-      updateRopeEndpoints(target);
-    } else if (state === 'brace') {
-      positionCharacter(stateTo, facing);
-      character.setPose('brace', progress, timestamp * 0.004);
-      updateRopeEndpoints(target);
-    } else if (state === 'climb') {
+    } else if (state === 'await-target') {
+      positionCharacter(currentPoint);
+      character.setPose('rest', 1, timestamp * 0.0015);
+      if (targetIsVisible(targetIndex)) enterDeploy(timestamp);
+    } else if (state === 'deploy-ladder') {
+      positionCharacter(stateFrom);
+      character.setPose('deploy-ladder', progress, timestamp * 0.004);
+      updateLadderSpan(eased, 'bottom');
+    } else if (state === 'climb-ladder') {
       guideTowardTarget(target, delta);
-      positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) }, facing);
-      character.setPose('climb', progress, timestamp * 0.007);
-      updateRopeEndpoints(target);
-    } else if (state === 'pull-bucket') {
-      positionCharacter(stateTo, facing);
-      character.setPose('pull-bucket', progress, timestamp * 0.004);
-      updateRopeEndpoints(target);
+      updateLadderSpan(1, 'bottom');
+      positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
+      character.setPose('climb-ladder', progress, climbCycles);
+      if (progress > 0.08 && progress < 0.94) emitStream(PAINT_RATES.drip, false, progress, delta);
+    } else if (state === 'retrieve-ladder') {
+      positionCharacter(stateTo);
+      character.setPose('retrieve-ladder', progress, timestamp * 0.004);
+      updateLadderSpan(1 - eased, 'top');
     } else if (state === 'paint-swing') {
-      positionCharacter(stateTo, facing);
+      positionCharacter(stateTo);
       character.setPose('paint-swing', progress, timestamp * 0.003);
       if (progress < 1) emitStream(PAINT_RATES.swing, false, progress, delta);
       if (progress > 0.5 && progress < 1 && !paintBurstEmitted) {
@@ -538,32 +619,39 @@
         emitPaint(window.innerWidth <= 520 ? 52 : 78, true, progress, delta);
       }
       landingPaint(progress);
-    } else if (state === 'portrait-rest') {
-      positionCharacter(waypoints[waypoints.length - 1], 1);
+    } else if (state === 'vanish') {
+      positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
       character.setPose('rest', 1, timestamp * 0.0015);
+      character.setOpacity(1 - eased);
+      if (progress > 0.16 && !vanishBurstEmitted) {
+        vanishBurstEmitted = true;
+        emitPaint(window.innerWidth <= 520 ? 24 : 40, true, progress, delta);
+      }
+    } else if (state === 'complete') {
+      character.setOpacity(0);
+      if (ladder) ladder.hide();
     } else if (state === 'cancelled-rest') {
       var settle = ease(clamp((timestamp - stateStarted) / 550, 0, 1));
-      positionCharacter({ x: mix(stateFrom.x, cancelPoint.x, settle), y: mix(stateFrom.y, cancelPoint.y, settle) }, cancelPoint.x < stateFrom.x ? -1 : 1);
+      positionCharacter({ x: mix(stateFrom.x, cancelPoint.x, settle), y: mix(stateFrom.y, cancelPoint.y, settle) });
       character.setPose('rest', settle, timestamp * 0.0015);
     }
 
     character.update(delta);
-    rope.update(delta);
     particles.update(delta);
 
-    if (DURATIONS[state] && progress >= 1) advanceState(timestamp);
-    if ((state === 'bottom-paint' || state === 'paint-swing') && progress >= 1) pauseUntilTargetVisible();
+    if (state === frameState && DURATIONS[state] && progress >= 1) advanceState(timestamp);
+    if (state === 'await-target') pauseUntilTargetVisible();
   }
 
   function finishLoop() {
+    if (state === 'complete') {
+      cleanupLiveLayer({ preserveStage: true });
+      return;
+    }
     active = false;
     if (frameRequest) window.cancelAnimationFrame(frameRequest);
     frameRequest = 0;
-    if (state === 'portrait-rest') {
-      window.addEventListener('scroll', scheduleRestLayout, { passive: true });
-    } else {
-      removeRuntimeListeners();
-    }
+    removeRuntimeListeners();
   }
 
   function frame(timestamp) {
@@ -580,7 +668,8 @@
       return;
     }
 
-    if (state === 'portrait-rest' && particles.activeCount === 0) {
+    if (!active) return;
+    if (state === 'complete' && particles.activeCount === 0) {
       finishLoop();
       return;
     }
@@ -605,11 +694,11 @@
       requestFallback();
       return;
     }
-    if (!character || state === 'portrait-rest' || state === 'cancelled-rest') return;
-    if (rope) rope.hide();
+    if (!character || state === 'complete' || state === 'cancelled-rest') return;
+    if (ladder) ladder.hide();
     stateFrom.x = currentPoint.x;
     stateFrom.y = currentPoint.y;
-    cancelPoint.x = Math.abs(currentPoint.x - laneX(0)) <= Math.abs(currentPoint.x - laneX(1)) ? laneX(0) : laneX(1);
+    cancelPoint.x = laneX();
     cancelPoint.y = currentPoint.y;
     setState('cancelled-rest', window.performance.now());
     if (!active) {
@@ -624,28 +713,28 @@
     window.removeEventListener('orientationchange', scheduleLayout);
     document.removeEventListener('toggle', scheduleLayout, true);
     window.removeEventListener('scroll', resumeIfTargetVisible);
-    window.removeEventListener('scroll', scheduleRestLayout);
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame);
     layoutFrame = 0;
   }
 
-  function cleanupLiveLayer() {
+  function cleanupLiveLayer(options) {
+    options = options || {};
     active = false;
     if (frameRequest) window.cancelAnimationFrame(frameRequest);
     frameRequest = 0;
     removeRuntimeListeners();
     if (liveCanvas) liveCanvas.removeEventListener('webglcontextlost', handleContextLost);
-    if (rope) rope.dispose();
+    if (ladder) ladder.dispose();
     if (particles) particles.dispose();
     if (character) character.dispose();
     if (renderer) renderer.dispose();
-    rope = null;
+    ladder = null;
     particles = null;
     character = null;
     renderer = null;
     scene = null;
     camera = null;
-    setLiveStage(false);
+    if (!options.preserveStage) setLiveStage(false);
     if (liveCanvas && liveCanvas.parentNode) liveCanvas.parentNode.removeChild(liveCanvas);
   }
 
@@ -666,7 +755,7 @@
     if (cancelledBeforeInitialization || state === 'cancelled-rest') return;
     THREE = module;
     if (!THREE || !liveCanvas || !trail || typeof PaintJourney.createCharacter !== 'function' ||
-        typeof PaintJourney.createRope !== 'function' || typeof PaintJourney.createParticles !== 'function') {
+        typeof PaintJourney.createLadder !== 'function' || typeof PaintJourney.createParticles !== 'function') {
       throw new Error('Paint journey runtime is unavailable');
     }
 
@@ -679,11 +768,14 @@
     resizeRenderer();
 
     character = PaintJourney.createCharacter({ THREE: THREE, scene: scene });
-    rope = PaintJourney.createRope({
+    ladder = PaintJourney.createLadder({
       THREE: THREE,
       scene: scene,
-      segments: 20,
-      radius: window.innerWidth <= 520 ? 0.88 : 1.35
+      maxRungs: window.innerWidth <= 520 ? 24 : 36,
+      width: window.innerWidth <= 520 ? 22 : 28,
+      rungSpacing: window.innerWidth <= 520 ? 18 : 21,
+      railRadius: window.innerWidth <= 520 ? 1.35 : 1.8,
+      rungRadius: window.innerWidth <= 520 ? 0.95 : 1.25
     });
     particles = PaintJourney.createParticles({
       THREE: THREE,
@@ -694,8 +786,8 @@
       pagePlaneZ: 0,
       toDocument: particlesToDocument
     });
-    ropeOrigin = new THREE.Vector3();
-    ropeAnchor = new THREE.Vector3();
+    ladderBottom = new THREE.Vector3();
+    ladderTop = new THREE.Vector3();
     bucketOrigin = new THREE.Vector3();
     previousBucketOrigin = new THREE.Vector3();
     bucketVelocity = new THREE.Vector3();

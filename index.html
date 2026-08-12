@@ -18,19 +18,19 @@
     }
     a { color: #222; }
     a:focus-visible { outline: 1px solid #222; outline-offset: 4px; }
-    h1 { font-size: 1.3em; margin-bottom: 4px; }
+    h1 { font-size: 1.5em; margin-bottom: 4px; }
     h2 { font-size: 1em; margin-top: 32px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
     h2[id] { scroll-margin-top: 72px; }
-    p { font-size: 0.95em; }
-    ul { font-size: 0.95em; padding-left: 22px; }
+    p { font-size: 1em; }
+    ul { font-size: 1em; padding-left: 22px; }
     li { margin: 6px 0; }
-    .meta { color: #666; font-size: 0.9em; }
+    .meta { color: #666; font-size: 0.75em; }
     hr { border: none; border-top: 1px solid #ccc; margin: 32px 0; }
-    footer { color: #999; font-size: 0.85em; margin-top: 48px; }
+    footer { color: #999; font-size: 0.75em; margin-top: 48px; }
     .img-row { display: flex; gap: 8px; margin: 12px 0; }
     .img-row img { width: 32%; height: auto; }
     details { margin-top: 8px; }
-    details summary { cursor: pointer; font-weight: bold; font-size: 0.95em; }
+    details summary { cursor: pointer; font-weight: bold; font-size: 1em; }
     details summary:hover { color: #666; }
     details .thought-body { margin-top: 8px; }
     .header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
@@ -39,7 +39,7 @@
       width: 150px; height: 150px; flex-shrink: 0;
       border: none; border-radius: 0;
       display: flex; align-items: center; justify-content: center;
-      color: #aaa; font-size: 0.8em; text-align: center;
+      color: #aaa; font-size: 0.75em; text-align: center;
       background: #fff; overflow: visible;
       position: relative; cursor: pointer;
     }
@@ -84,7 +84,7 @@
     .epigraph {
       color: #173b63;
       font-style: italic;
-      font-size: 0.9em;
+      font-size: 0.75em;
       line-height: 1.65;
       margin: 18px 0 28px;
       padding: 2px 0 2px 18px;
@@ -98,7 +98,7 @@
       display: flex;
       flex-direction: column;
       gap: 8px;
-      font-size: 0.76em;
+      font-size: 0.75em;
       line-height: 1.35;
       z-index: 40;
     }
@@ -217,9 +217,10 @@
     }
 
     @media (max-width: 520px) {
-      .header { margin-bottom: 28px; }
+      .header { gap: 12px; margin-bottom: 28px; }
+      .photo { width: 115px; height: 115px; }
       .voice-bubble {
-        top: 150px;
+        top: 118px;
         right: 50%;
         transform: translateX(50%) rotate(-2deg);
       }
@@ -240,7 +241,7 @@
   <script src="assets/homepage-navigation.js" defer></script>
   <script src="assets/paint-journey-trail.js" defer></script>
   <script src="assets/paint-journey-character.js" defer></script>
-  <script src="assets/paint-journey-rope.js" defer></script>
+  <script src="assets/paint-journey-ladder.js" defer></script>
   <script src="assets/paint-journey-particles.js" defer></script>
   <script src="assets/paint-journey.js" defer></script>
   <script src="assets/paint-finale.js" defer></script>

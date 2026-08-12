@@ -8,7 +8,7 @@ nav="$root/assets/homepage-navigation.js"
 finale="$root/assets/paint-finale.js"
 trail="$root/assets/paint-journey-trail.js"
 character="$root/assets/paint-journey-character.js"
-rope="$root/assets/paint-journey-rope.js"
+ladder="$root/assets/paint-journey-ladder.js"
 particles="$root/assets/paint-journey-particles.js"
 journey="$root/assets/paint-journey.js"
 
@@ -62,7 +62,7 @@ done
 for script in \
   'assets/paint-journey-trail.js' \
   'assets/paint-journey-character.js' \
-  'assets/paint-journey-rope.js' \
+  'assets/paint-journey-ladder.js' \
   'assets/paint-journey-particles.js' \
   'assets/paint-journey.js'; do
   require_text "$home" "<script src=\"$script\" defer>"
@@ -109,7 +109,7 @@ test -f "$trail" || fail "missing assets/paint-journey-trail.js"
 for text in \
   'PaintJourney.createTrail' \
   'getExclusionZones' \
-  'hsl(' \
+  'pigmentRgb' \
   'drawStaticSpectrum' \
   'devicePixelRatio' \
   'stamp' \
@@ -134,13 +134,12 @@ for text in \
   'bucketLip' \
   'throwingHand' \
   'walk' \
-  'coil-rope' \
-  'throw-rope' \
-  'brace' \
-  'climb' \
-  'pull-bucket' \
+  'deploy-ladder' \
+  'climb-ladder' \
+  'retrieve-ladder' \
   'paint-swing' \
   'rest' \
+  'setOpacity' \
   'setPaintHue' \
   'paint-surface' \
   'HemisphereLight' \
@@ -152,19 +151,18 @@ done
 
 node "$root/scripts/check-paint-journey-character.js"
 
-test -f "$rope" || fail "missing assets/paint-journey-rope.js"
+test -f "$ladder" || fail "missing assets/paint-journey-ladder.js"
 
 for text in \
-  'PaintJourney.createRope' \
-  'throwBetween' \
-  'setEndpoints' \
-  'caught' \
-  'CatmullRomCurve3' \
+  'PaintJourney.createLadder' \
+  'setSpan' \
+  'ladder-rail' \
+  'ladder-rung' \
   'dispose'; do
-  require_text "$rope" "$text"
+  require_text "$ladder" "$text"
 done
 
-node "$root/scripts/check-paint-journey-rope.js"
+node "$root/scripts/check-paint-journey-ladder.js"
 
 test -f "$particles" || fail "missing assets/paint-journey-particles.js"
 
@@ -194,13 +192,12 @@ for text in \
   'entering' \
   'bottom-paint' \
   'walk' \
-  'coil-rope' \
-  'throw-rope' \
-  'brace' \
-  'climb' \
-  'pull-bucket' \
+  'deploy-ladder' \
+  'climb-ladder' \
+  'retrieve-ladder' \
   'paint-swing' \
-  'portrait-rest' \
+  'vanish' \
+  'complete' \
   'cancelled-rest' \
   'getWorldPosition' \
   'wheel' \
@@ -214,7 +211,8 @@ for text in \
   'resumeIfTargetVisible' \
   'previousBucketOrigin.set(0, 0, 0)' \
   'portraitPoint' \
-  'trail.whorl' \
+  'trail.impact' \
+  'trail.veil' \
   'PAINT_RATES' \
   "classList.toggle('is-live'" \
   'webglcontextlost'; do

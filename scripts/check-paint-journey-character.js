@@ -67,7 +67,8 @@ class Object3D {
 }
 
 class Geometry {
-  constructor() {
+  constructor(...args) {
+    this.args = args;
     this.disposeCount = 0;
   }
 
@@ -79,13 +80,18 @@ class Geometry {
 class Material {
   constructor(options = {}) {
     Object.assign(this, options);
-    if (typeof this.color === 'number') {
-      this.color = {
+    for (const property of ['color', 'emissive']) {
+      if (typeof this[property] !== 'number') continue;
+      this[property] = {
         hue: null,
+        rgb: null,
         setHSL(hue, saturation, lightness) {
           this.hue = hue;
           this.saturation = saturation;
           this.lightness = lightness;
+        },
+        setRGB(red, green, blue) {
+          this.rgb = [red, green, blue];
         }
       };
     }
@@ -172,7 +178,11 @@ const document = {
 };
 
 function createCharacter() {
-  const window = {};
+  const window = {
+    PaintJourney: {
+      pigmentRgb() { return { r: 47, g: 72, b: 166 }; }
+    }
+  };
   const scene = new Object3D();
   vm.runInNewContext(source, { window, document, Math, Number, Object, Array, Error });
   return { scene, character: window.PaintJourney.createCharacter({ THREE, scene }) };
@@ -250,12 +260,95 @@ function testBucketPaintSurfaceTracksSpectrumHue() {
   assert.ok(surface, 'bucket must expose a visible paint surface');
   assert.equal(typeof character.setPaintHue, 'function', 'character must expose paint hue control');
   character.setPaintHue(270);
-  assert.equal(surface.material.color.hue, 0.75, 'paint surface must use the requested spectrum hue');
+  assert.deepEqual(surface.material.color.rgb, [47 / 255, 72 / 255, 166 / 255],
+    'paint surface must use the same grounded pigment RGB as the emitted paint');
+  assert.equal(surface.material.color.hue, null,
+    'bucket color must not fall back to synthetic HSL neon');
+}
+
+function testFigureUsesCompactHumanProportions() {
+  const { character } = createCharacter();
+  const shoulder = character.root.getObjectByName('throwing-shoulder');
+  const upperArm = character.root.getObjectByName('throwing-upper-arm');
+  const thigh = character.root.getObjectByName('left-thigh');
+
+  assert.ok(Math.abs(shoulder.position.x) <= 16,
+    'shoulders must sit closer to the torso instead of reading as a dangling stick rig');
+  assert.ok(upperArm.scale.y <= 25,
+    'arms must use a compact adult proportion');
+  assert.ok(thigh.scale.x >= 6.6,
+    'legs must have enough mass to read as a human figure');
+}
+
+function testWalkAndLadderClimbStayControlled() {
+  const { character } = createCharacter();
+  const pelvis = character.root.getObjectByName('pelvis');
+  const leftHip = character.root.getObjectByName('left-hip');
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+
+  character.setPose('walk', 0.25, 0);
+  assert.ok(Math.abs(leftHip.rotation.z) <= 0.4,
+    'walk stride must stay compact and planted');
+  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 0.3,
+    'walk arm swing must not make the figure look dangly');
+  assert.ok(pelvis.position.y <= 67,
+    'walk bounce must remain subtle');
+
+  character.setPose('deploy-ladder', 1, 0);
+  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 1.15,
+    'ladder deployment must keep the arm bent close to the body instead of forming a T-pose');
+
+  character.setPose('climb-ladder', 0.35, 0);
+  assert.ok(Math.abs(leftHip.rotation.z) <= 0.36,
+    'ladder steps must keep the hips under the torso');
+  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 3.05,
+    'ladder reach must remain within a natural shoulder range');
+}
+
+function testLadderPoseTransitionsStayContinuous() {
+  const { character } = createCharacter();
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+  const bucketShoulder = character.root.getObjectByName('bucket-shoulder');
+
+  character.setPose('deploy-ladder', 1, 0);
+  const deployed = [throwingShoulder.rotation.z, bucketShoulder.rotation.z];
+  character.setPose('climb-ladder', 0, 3);
+  assert.ok(Math.abs(throwingShoulder.rotation.z - deployed[0]) < 0.02,
+    'climb must begin from the deployed arm pose without snapping');
+  assert.ok(Math.abs(bucketShoulder.rotation.z - deployed[1]) < 0.02,
+    'bucket arm must enter the climb without snapping');
+
+  character.setPose('climb-ladder', 1, 3);
+  const climbed = [throwingShoulder.rotation.z, bucketShoulder.rotation.z];
+  character.setPose('retrieve-ladder', 0, 0);
+  assert.ok(Math.abs(throwingShoulder.rotation.z - climbed[0]) < 0.02,
+    'ladder retrieval must begin from the final climbing pose');
+  assert.ok(Math.abs(bucketShoulder.rotation.z - climbed[1]) < 0.02,
+    'bucket arm must leave the climb without snapping');
+}
+
+function testCharacterCanFadeCompletelyAtTheTop() {
+  const { character } = createCharacter();
+  assert.equal(typeof character.setOpacity, 'function',
+    'character must expose opacity control for the final disappearance');
+
+  character.setOpacity(0.35);
+  assert.equal(character.root.visible, true, 'partial fade must keep the figure visible');
+  const torso = character.root.getObjectByName('torso');
+  assert.ok(torso.material.opacity <= 0.35,
+    'partial fade must affect the rendered body materials');
+
+  character.setOpacity(0);
+  assert.equal(character.root.visible, false, 'zero opacity must remove the figure from view');
 }
 
 testWalkPlantsAlternatingSupportFeet();
 testBucketFollowsStrideWithPhaseLag();
 testLightsStayInsideCharacterRig();
 testBucketPaintSurfaceTracksSpectrumHue();
+testFigureUsesCompactHumanProportions();
+testWalkAndLadderClimbStayControlled();
+testLadderPoseTransitionsStayContinuous();
+testCharacterCanFadeCompletelyAtTheTop();
 
 console.log('PASS: paint journey character behavior');

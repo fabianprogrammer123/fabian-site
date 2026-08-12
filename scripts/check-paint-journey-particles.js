@@ -52,6 +52,12 @@ class Points {
 }
 
 class Color {
+  setRGB(red, green, blue) {
+    this.r = red;
+    this.g = green;
+    this.b = blue;
+  }
+
   setHSL(hue, saturation, lightness) {
     this.r = hue;
     this.g = saturation;
@@ -110,8 +116,16 @@ function testActivePaintUsesVisibleDropletScaleAndFullSpectrumBurst() {
   assert.ok(points.material.size >= 7, 'desktop paint droplets must read as a viscous stream, not pixel confetti');
   assert.ok(points.material.opacity >= 0.92, 'active paint must remain richly saturated');
   particles.burst({ origin: { x: 5, y: 8, z: 10 }, count: 12, hue: 0 });
-  const hues = Array.from(points.geometry.attributes.color.array).filter((value, index) => index % 3 === 0);
-  assert.ok(Math.max(...hues) - Math.min(...hues) > 0.6, 'one strong bucket swing must visibly span most of the spectrum');
+  const values = Array.from(points.geometry.attributes.color.array);
+  const reds = values.filter((value, index) => index % 3 === 0);
+  const greens = values.filter((value, index) => index % 3 === 1);
+  const blues = values.filter((value, index) => index % 3 === 2);
+  assert.ok(Math.max(...reds) - Math.min(...reds) > 0.45,
+    'one bucket swing must span visibly different red pigment values');
+  assert.ok(Math.max(...greens) - Math.min(...greens) > 0.35,
+    'one bucket swing must span visibly different green pigment values');
+  assert.ok(Math.max(...blues) - Math.min(...blues) > 0.35,
+    'one bucket swing must span visibly different blue pigment values');
 }
 
 testClearImmediatelyRetiresActiveParticlesWithoutDisposal();

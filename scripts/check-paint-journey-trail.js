@@ -9,6 +9,10 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'assets/paint-journey-trail.js'), 'utf8');
+const defaultSelectorBlock = source.match(/DEFAULT_CONTENT_SELECTORS\s*=\s*\[([\s\S]*?)\]/)?.[1] || '';
+
+assert.doesNotMatch(defaultSelectorBlock, /'p'|'li'|'a'/,
+  'body copy and links must not be hard-erased from the broad paint field');
 
 function createHarness(options = {}) {
   const operations = [];
@@ -31,16 +35,23 @@ function createHarness(options = {}) {
       clip() {},
       clearRect(...args) { record.push(['clearRect', ...args]); },
       createRadialGradient() {
-        return { addColorStop() {} };
+        return { addColorStop(position, color) { record.push(['colorStop', position, color]); } };
       },
       arc(...args) { record.push(['arc', ...args]); },
+      ellipse(...args) { record.push(['ellipse', ...args]); },
       moveTo(...args) { record.push(['moveTo', ...args]); },
       lineTo(...args) { record.push(['lineTo', ...args]); },
+      bezierCurveTo(...args) { record.push(['bezierCurveTo', ...args]); },
+      quadraticCurveTo(...args) { record.push(['quadraticCurveTo', ...args]); },
+      closePath() { record.push(['closePath']); },
       stroke() { record.push(['stroke']); },
-      fill() {},
+      fill() { record.push(['fill']); },
       fillRect(...args) { record.push(['fillRect', ...args]); },
       drawImage() {},
-      setTransform(...args) { record.push(['setTransform', ...args]); }
+      setTransform(...args) { record.push(['setTransform', ...args]); },
+      set lineWidth(value) { record.push(['lineWidth', value]); },
+      set strokeStyle(value) { record.push(['strokeStyle', value]); },
+      set fillStyle(value) { record.push(['fillStyle', value]); }
     };
   }
 
@@ -84,6 +95,13 @@ function createHarness(options = {}) {
       return { width: 0, height: 0, getContext() { return createContext(false); } };
     }
   };
+  if (options.dynamicDocumentWidth) {
+    const measuredWidth = () => canvas.style.display === 'none'
+      ? 800
+      : Math.max(800, Number.parseFloat(canvas.style.width) || 0);
+    Object.defineProperty(document.documentElement, 'scrollWidth', { get: measuredWidth });
+    Object.defineProperty(document.body, 'scrollWidth', { get: measuredWidth });
+  }
   const window = {
     PaintJourney: {},
     devicePixelRatio: 2,
@@ -118,6 +136,7 @@ function createHarness(options = {}) {
   const trail = window.PaintJourney.createTrail({ canvas });
   return {
     operations,
+    canvas,
     trail,
     selectorQueryCount: () => selectorQueries,
     journeyContent,
@@ -173,6 +192,16 @@ function testStampsReuseExclusionsUntilResize() {
   assert.equal(harness.selectorQueryCount(), 2, 'stamps must reuse the rebuilt cache');
 }
 
+function testResizeCanShrinkPastTheOldCanvasWidth() {
+  const harness = createHarness({ dynamicDocumentWidth: true });
+  harness.canvas.style.width = '1280px';
+
+  harness.trail.resize();
+
+  assert.equal(harness.canvas.style.width, '800px',
+    'measurement must exclude the old backing canvas so a narrower viewport can shrink cleanly');
+}
+
 function testStaticSpectrumUsesLocalExclusions() {
   const harness = createHarness({
     contentRect: { left: 15, top: 83, width: 16, height: 20 }
@@ -222,6 +251,11 @@ function testDetailsToggleRefreshesExclusions() {
   assert.equal(harness.selectorQueryCount(), 2, 'details toggle must rebuild exclusions');
 }
 
+function testFullDocumentCanvasUsesAPixelBudget() {
+  assert.match(source, /pixelBudget/,
+    'the persistent full-page trail must clamp its backing store with a pixel budget');
+}
+
 function testWhorlDrawsConnectedFullSpectrumStroke() {
   const harness = createHarness();
   harness.operations.length = 0;
@@ -236,12 +270,58 @@ function testWhorlDrawsConnectedFullSpectrumStroke() {
   assert.ok(strokes.length >= 12, 'whorl must advance color along the spectrum');
 }
 
+function testImpactCreatesWetPoolDripsAndSatelliteSplatter() {
+  const harness = createHarness();
+  harness.operations.length = 0;
+
+  assert.equal(typeof harness.trail.impact, 'function', 'trail must expose an impact painter');
+  harness.trail.impact({ x: 90, y: 120, hue: 22, radius: 64, direction: -1 });
+
+  const ellipses = harness.operations.filter((operation) => operation[0] === 'ellipse');
+  const strokes = harness.operations.filter((operation) => operation[0] === 'stroke');
+  const colors = harness.operations.filter((operation) => operation[0] === 'colorStop');
+  assert.ok(ellipses.length >= 8, 'impact must combine a pooled body with satellite droplets');
+  assert.ok(strokes.length >= 3, 'impact must create gravity-driven wet drips');
+  assert.ok(colors.some((operation) => String(operation[2]).startsWith('rgba(')),
+    'paint must use a grounded pigment palette rather than synthetic HSL neon');
+}
+
+function testVeilSpreadsTranslucentPaintAcrossThePage() {
+  const harness = createHarness();
+  harness.operations.length = 0;
+
+  assert.equal(typeof harness.trail.veil, 'function', 'trail must expose a broad spray veil');
+  harness.trail.veil({
+    from: { x: 920, y: 160 },
+    to: { x: 280, y: 205 },
+    hue: 190,
+    width: 150,
+    alpha: 0.22
+  });
+
+  const ellipses = harness.operations.filter((operation) => operation[0] === 'ellipse');
+  const curves = harness.operations.filter((operation) => operation[0] === 'bezierCurveTo');
+  const lineWidths = harness.operations.filter((operation) => operation[0] === 'lineWidth');
+  assert.ok(ellipses.length >= 16, 'veil must layer enough translucent pigment to read as a broad field');
+  assert.ok(curves.length >= 1, 'veil must include a directional gestural sweep');
+  assert.ok(lineWidths.every((operation) => operation[1] <= 24),
+    'veil must read as atomized pigment rather than a repeated opaque bar');
+  assert.doesNotMatch(source, /hue\s*\+\s*mote\s*\*\s*11\.5/,
+    'veil droplets must follow the gesture color instead of becoming random rainbow confetti');
+  assert.doesNotMatch(source, /hue\s*\+\s*satellite\s*\*\s*19/,
+    'impact satellites must remain in the pool pigment family for realistic paint behavior');
+}
+
 testDocumentCoordinatesUseCanvasOrigin();
 testStampsReuseExclusionsUntilResize();
+testResizeCanShrinkPastTheOldCanvasWidth();
 testStaticSpectrumUsesLocalExclusions();
 testScrollRefreshesExclusionsOncePerFrame();
 testContentResizeRefreshesExclusions();
 testDetailsToggleRefreshesExclusions();
+testFullDocumentCanvasUsesAPixelBudget();
 testWhorlDrawsConnectedFullSpectrumStroke();
+testImpactCreatesWetPoolDripsAndSatelliteSplatter();
+testVeilSpreadsTranslucentPaintAcrossThePage();
 
 console.log('PASS: paint journey trail behavior');

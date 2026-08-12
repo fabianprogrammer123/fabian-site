@@ -2,6 +2,35 @@
   'use strict';
 
   var PaintJourney = window.PaintJourney = window.PaintJourney || {};
+  var PIGMENT_STOPS = [
+    [0, 207, 48, 49],
+    [32, 226, 91, 39],
+    [62, 222, 174, 40],
+    [105, 76, 143, 72],
+    [150, 28, 133, 105],
+    [194, 27, 132, 164],
+    [226, 47, 72, 166],
+    [270, 99, 57, 139],
+    [318, 180, 47, 101],
+    [360, 207, 48, 49]
+  ];
+
+  function pigmentRgb(value) {
+    var hue = ((Number(value) || 0) % 360 + 360) % 360;
+    var stopIndex = 0;
+    while (stopIndex < PIGMENT_STOPS.length - 2 && hue > PIGMENT_STOPS[stopIndex + 1][0]) stopIndex += 1;
+    var from = PIGMENT_STOPS[stopIndex];
+    var to = PIGMENT_STOPS[stopIndex + 1];
+    var progress = (hue - from[0]) / Math.max(1, to[0] - from[0]);
+    return {
+      r: from[1] + (to[1] - from[1]) * progress,
+      g: from[2] + (to[2] - from[2]) * progress,
+      b: from[3] + (to[3] - from[3]) * progress
+    };
+  }
+
+  var resolvePigment = PaintJourney.pigmentRgb || pigmentRgb;
+  PaintJourney.pigmentRgb = resolvePigment;
 
   PaintJourney.createParticles = function createParticles(options) {
     options = options || {};
@@ -93,7 +122,14 @@
     }
 
     function setParticleColor(index, nextHue) {
-      color.setHSL(((nextHue % 360) + 360) % 360 / 360, 0.9, 0.55 + random() * 0.08);
+      var pigment = resolvePigment(nextHue);
+      var variation = 0.88 + random() * 0.12;
+      var chalk = random() * 0.055;
+      color.setRGB(
+        Math.min(1, pigment.r / 255 * variation + chalk),
+        Math.min(1, pigment.g / 255 * variation + chalk),
+        Math.min(1, pigment.b / 255 * variation + chalk)
+      );
       var offset = index * 3;
       colors[offset] = color.r;
       colors[offset + 1] = color.g;
