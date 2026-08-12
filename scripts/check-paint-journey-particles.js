@@ -36,6 +36,10 @@ class BufferGeometry {
 }
 
 class PointsMaterial {
+  constructor(options = {}) {
+    Object.assign(this, options);
+  }
+
   dispose() {}
 }
 
@@ -99,6 +103,18 @@ function testClearImmediatelyRetiresActiveParticlesWithoutDisposal() {
   assert.equal(particles.activeCount, 2, 'the pool must remain reusable after clear');
 }
 
+function testActivePaintUsesVisibleDropletScaleAndFullSpectrumBurst() {
+  const { particles, scene } = createParticles();
+  const points = scene.children[0];
+
+  assert.ok(points.material.size >= 7, 'desktop paint droplets must read as a viscous stream, not pixel confetti');
+  assert.ok(points.material.opacity >= 0.92, 'active paint must remain richly saturated');
+  particles.burst({ origin: { x: 5, y: 8, z: 10 }, count: 12, hue: 0 });
+  const hues = Array.from(points.geometry.attributes.color.array).filter((value, index) => index % 3 === 0);
+  assert.ok(Math.max(...hues) - Math.min(...hues) > 0.6, 'one strong bucket swing must visibly span most of the spectrum');
+}
+
 testClearImmediatelyRetiresActiveParticlesWithoutDisposal();
+testActivePaintUsesVisibleDropletScaleAndFullSpectrumBurst();
 
 console.log('PASS: paint journey particle behavior');

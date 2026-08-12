@@ -32,12 +32,34 @@
     geometry.setAttribute('position', positionAttribute);
     geometry.setAttribute('color', colorAttribute);
     geometry.setDrawRange(0, 0);
+    var dropletTexture = null;
+    if (window.document && THREE.CanvasTexture) {
+      var dropletCanvas = window.document.createElement('canvas');
+      dropletCanvas.width = 64;
+      dropletCanvas.height = 64;
+      var dropletContext = dropletCanvas.getContext && dropletCanvas.getContext('2d');
+      if (dropletContext) {
+        var dropletGradient = dropletContext.createRadialGradient(25, 21, 2, 32, 32, 30);
+        dropletGradient.addColorStop(0, 'rgba(255,255,255,1)');
+        dropletGradient.addColorStop(0.52, 'rgba(255,255,255,0.96)');
+        dropletGradient.addColorStop(0.82, 'rgba(255,255,255,0.58)');
+        dropletGradient.addColorStop(1, 'rgba(255,255,255,0)');
+        dropletContext.fillStyle = dropletGradient;
+        dropletContext.beginPath();
+        dropletContext.ellipse(32, 32, 24, 29, -0.18, 0, Math.PI * 2);
+        dropletContext.fill();
+        dropletTexture = new THREE.CanvasTexture(dropletCanvas);
+        dropletTexture.needsUpdate = true;
+      }
+    }
     var material = new THREE.PointsMaterial({
-      size: mobile ? 3.8 : 5.2,
+      size: mobile ? 5.8 : 7.8,
       sizeAttenuation: false,
       vertexColors: true,
       transparent: true,
-      opacity: 0.86,
+      opacity: 0.96,
+      alphaTest: dropletTexture ? 0.025 : 0,
+      map: dropletTexture,
       depthWrite: false
     });
     var points = new THREE.Points(geometry, material);
@@ -102,7 +124,7 @@
         velocityY[index] = component(velocity, 'y') + component(bucketVelocity, 'y') + (random() - 0.5) * spread;
         velocityZ[index] = component(velocity, 'z') + component(bucketVelocity, 'z') - (0.3 + random()) * depthSpread;
         life[index] = (widerCone ? 0.65 : 0.9) + random() * (widerCone ? 0.55 : 0.85);
-        particleHue[index] = (baseHue + emitted * (widerCone ? 8.5 : 3.5)) % 360;
+        particleHue[index] = (baseHue + emitted * (widerCone ? 360 / Math.max(1, count) : 5.5)) % 360;
         documentX[index] = 0;
         documentY[index] = 0;
         setParticleColor(index, particleHue[index]);
@@ -230,6 +252,7 @@
       if (points.parent) points.parent.remove(points);
       geometry.dispose();
       material.dispose();
+      if (dropletTexture && typeof dropletTexture.dispose === 'function') dropletTexture.dispose();
     }
 
     var api = { emit: emit, burst: burst, update: update, setHue: setHue, clear: clear, dispose: dispose };

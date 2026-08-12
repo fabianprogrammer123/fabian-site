@@ -181,6 +181,49 @@
       });
     }
 
+    function whorl(options) {
+      if (destroyed) return;
+      options = options || {};
+      if (!Number.isFinite(options.x) || !Number.isFinite(options.y)) return;
+      var radius = Math.max(12, Number(options.radius) || 64);
+      var turns = Math.max(0.55, Number(options.turns) || 1.35);
+      var strokeWidth = Math.max(3, Number(options.width) || 18);
+      var progress = Math.max(0.04, Math.min(1, options.progress === undefined ? 1 : Number(options.progress)));
+      var direction = Number(options.direction) < 0 ? -1 : 1;
+      var baseHue = Number.isFinite(Number(options.hue)) ? Number(options.hue) : 0;
+      var segmentCount = Math.max(12, Math.floor(42 * progress));
+      var localX = options.x - originX;
+      var localY = options.y - originY;
+      var angleOffset = Number(options.angle) || -Math.PI * 0.12;
+
+      withContentProtection(function () {
+        context.save();
+        context.globalCompositeOperation = 'multiply';
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        for (var index = 0; index < segmentCount; index += 1) {
+          var start = index / segmentCount * progress;
+          var end = (index + 1) / segmentCount * progress;
+          var startAngle = angleOffset + direction * start * Math.PI * 2 * turns;
+          var endAngle = angleOffset + direction * end * Math.PI * 2 * turns;
+          var startRadius = radius * (0.08 + Math.pow(start, 0.78) * 0.92);
+          var endRadius = radius * (0.08 + Math.pow(end, 0.78) * 0.92);
+          var startX = localX + Math.cos(startAngle) * startRadius;
+          var startY = localY + Math.sin(startAngle) * startRadius * 0.58;
+          var endX = localX + Math.cos(endAngle) * endRadius;
+          var endY = localY + Math.sin(endAngle) * endRadius * 0.58;
+          context.beginPath();
+          context.moveTo(startX, startY);
+          context.lineTo(endX, endY);
+          context.strokeStyle = 'hsl(' + ((baseHue + start * 360) % 360) + ' 94% 54% / 0.72)';
+          context.globalAlpha = 0.72 - start * 0.22;
+          context.lineWidth = strokeWidth * (1 - start * 0.46) * (0.9 + seeded(index + baseHue) * 0.2);
+          context.stroke();
+        }
+        context.restore();
+      });
+    }
+
     function edgeLanePoint(point, index) {
       var size = documentSize();
       var x = index % 2 ? size.width - 28 : 28;
@@ -295,6 +338,6 @@
     window.addEventListener('resize', scheduleResize);
     window.addEventListener('orientationchange', scheduleResize);
 
-    return { resize: resize, clear: clear, stamp: stamp, ribbon: ribbon, spray: spray, drawStaticSpectrum: drawStaticSpectrum, destroy: destroy };
+    return { resize: resize, clear: clear, stamp: stamp, ribbon: ribbon, spray: spray, whorl: whorl, drawStaticSpectrum: drawStaticSpectrum, destroy: destroy };
   };
 }(window, document));

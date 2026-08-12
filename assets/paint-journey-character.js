@@ -43,6 +43,20 @@
       opacity: 0.16,
       depthWrite: false
     });
+    var bucketInteriorMaterial = new THREE.MeshStandardMaterial({
+      color: 0x17191a,
+      roughness: 0.92,
+      metalness: 0.04
+    });
+    var paintMaterial = new THREE.MeshPhysicalMaterial({
+      color: 0xff335f,
+      emissive: 0x2a0612,
+      emissiveIntensity: 0.28,
+      roughness: 0.28,
+      metalness: 0,
+      clearcoat: 0.74,
+      clearcoatRoughness: 0.2
+    });
 
     function makeFaceTexture() {
       if (!document || typeof document.createElement !== 'function' || !THREE.CanvasTexture) return null;
@@ -169,6 +183,9 @@
     var bucketSway = joint('bucket-sway', bucketPose);
     var bucket = joint('bucket', bucketSway, 4, -19, 0);
     mesh('bucket-body', new THREE.CylinderGeometry(10, 8, 22, 12, 1, false), offWhite, bucket, 0, 0, 0);
+    mesh('bucket-interior', new THREE.CylinderGeometry(9.2, 9.2, 1.15, 16), bucketInteriorMaterial, bucket, 0, 10.45, 0);
+    var paintSurface = mesh('paint-surface', new THREE.CylinderGeometry(8.25, 8.25, 0.9, 20), paintMaterial, bucket, 0, 11.12, 0);
+    paintSurface.castShadow = false;
     mesh('bucket-band', new THREE.CylinderGeometry(10.4, 10.4, 3, 12), charcoal, bucket, 0, 9.5, 0);
     var bucketRim = joint('bucket-rim', bucket, 0, 11, 0);
     var bucketLip = joint('bucketLip', bucketRim);
@@ -425,6 +442,19 @@
       breathingJoint.scale.set(1 / breath, breath, 1);
     }
 
+    function setPaintHue(hue) {
+      if (disposed) return;
+      hue = Number(hue);
+      if (!Number.isFinite(hue)) return;
+      var normalized = ((hue % 360) + 360) % 360 / 360;
+      if (paintMaterial.color && typeof paintMaterial.color.setHSL === 'function') {
+        paintMaterial.color.setHSL(normalized, 0.94, 0.54);
+      }
+      if (paintMaterial.emissive && typeof paintMaterial.emissive.setHSL === 'function') {
+        paintMaterial.emissive.setHSL(normalized, 0.72, 0.13);
+      }
+    }
+
     function disposeMaterial(material, disposedMaterials, disposedTextures) {
       if (!material || disposedMaterials.indexOf(material) !== -1) return;
       disposedMaterials.push(material);
@@ -469,6 +499,7 @@
       throwingHand: throwingHand,
       setPose: setPose,
       setScreenPose: setScreenPose,
+      setPaintHue: setPaintHue,
       update: update,
       dispose: dispose
     };

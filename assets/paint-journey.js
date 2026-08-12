@@ -16,6 +16,7 @@
     'pull-bucket': 0.85,
     'paint-swing': 1.45
   };
+  var PAINT_RATES = { pour: 96, swing: 112, drip: 7 };
   var NAVIGATION_KEYS = {
     ' ': true,
     Spacebar: true,
@@ -42,6 +43,7 @@
   var frameRequest = 0;
   var active = false;
   var failed = false;
+  var cancelledBeforeInitialization = false;
   var guidanceEnabled = true;
   var programmaticScroll = false;
   var state = 'idle';
@@ -57,6 +59,9 @@
   var paintBurstEmitted = false;
   var emissionCarry = 0;
   var inputListenersAttached = false;
+  var pausedUntilVisible = false;
+  var paintedLandingIndex = -1;
+  var paintHue = 0;
 
   var THREE = null;
   var renderer = null;
@@ -79,6 +84,7 @@
     ropeThrown = false;
     paintBurstEmitted = false;
     emissionCarry = 0;
+    if (nextState === 'bottom-paint' || nextState === 'paint-swing') paintedLandingIndex = -1;
   }
 
   function clamp(value, minimum, maximum) {
@@ -109,8 +115,24 @@
   }
 
   function laneX(index) {
-    var inset = window.innerWidth <= 520 ? 18 : 30;
+    var inset = window.innerWidth <= 520 ? 52 : 70;
     return index % 2 === 0 ? inset : documentWidth() - inset;
+  }
+
+  function portraitPoint(element, rect) {
+    var pageLeft = rect.left + scrollX();
+    var pageRight = rect.right + scrollX();
+    var characterHalfWidth = window.innerWidth <= 520 ? 38 : 58;
+    var preferredRight = pageRight + (window.innerWidth <= 520 ? 46 : 78);
+    var x = preferredRight + characterHalfWidth <= documentWidth()
+      ? preferredRight
+      : pageLeft - (window.innerWidth <= 520 ? 44 : 72);
+    return {
+      name: 'portrait',
+      element: element,
+      x: clamp(x, characterHalfWidth, documentWidth() - characterHalfWidth),
+      y: rect.top + scrollY() + rect.height * 0.82
+    };
   }
 
   function computeWaypoints() {
@@ -128,6 +150,10 @@
       var element = document.querySelector('[data-journey-level="' + name + '"]');
       if (!element) continue;
       var rect = element.getBoundingClientRect();
+      if (name === 'portrait') {
+        next.push(portraitPoint(element, rect));
+        continue;
+      }
       next.push({
         name: name,
         element: element,
@@ -150,6 +176,7 @@
 
   function setLiveStage(isLive) {
     var walker = stage && stage.querySelector('.finale-walker');
+    if (stage) stage.classList.toggle('is-live', isLive);
     if (walker) walker.style.visibility = isLive ? 'hidden' : '';
     if (fallbackCanvas) fallbackCanvas.style.visibility = isLive ? 'hidden' : '';
   }
@@ -199,8 +226,24 @@
 
   function recomputeLayout() {
     layoutFrame = 0;
+    var oldTarget = waypoints[targetIndex];
     computeWaypoints();
     resizeRenderer();
+    var nextTarget = waypoints[targetIndex];
+    if (nextTarget && oldTarget) {
+      var targetDeltaX = nextTarget.x - oldTarget.x;
+      var targetDeltaY = nextTarget.y - oldTarget.y;
+      if (state === 'walk' || state === 'climb') {
+        stateTo.x += targetDeltaX;
+        stateTo.y += targetDeltaY;
+      }
+      if (state === 'portrait-rest') {
+        currentPoint.x = nextTarget.x;
+        currentPoint.y = nextTarget.y;
+        if (character) positionCharacter(currentPoint, 1);
+      }
+    }
+    if (state === 'portrait-rest' && !active && renderer && scene && camera) renderer.render(scene, camera);
   }
 
   function scheduleLayout() {
@@ -219,6 +262,27 @@
   function disableGuidance() {
     guidanceEnabled = false;
     programmaticScroll = false;
+  }
+
+  function resumeIfTargetVisible() {
+    if (!pausedUntilVisible || !targetIsVisible(targetIndex)) return;
+    pausedUntilVisible = false;
+    window.removeEventListener('scroll', resumeIfTargetVisible);
+    if (!active && renderer) {
+      active = true;
+      previousTimestamp = 0;
+      frameRequest = window.requestAnimationFrame(frame);
+    }
+  }
+
+  function pauseUntilTargetVisible() {
+    if (pausedUntilVisible || guidanceEnabled || targetIsVisible(targetIndex)) return false;
+    if (particles && particles.activeCount > 0) return false;
+    pausedUntilVisible = true;
+    active = false;
+    frameRequest = 0;
+    window.addEventListener('scroll', resumeIfTargetVisible, { passive: true });
+    return true;
   }
 
   function handleKeydown(event) {
@@ -275,6 +339,38 @@
     });
   }
 
+  function resetBucketMotion() {
+    if (previousBucketOrigin) previousBucketOrigin.set(0, 0, 0);
+    if (bucketVelocity) bucketVelocity.set(0, 0, 0);
+  }
+
+  function landingPaint(progress) {
+    if (!trail || !bucketOrigin || !character || progress < 0.26 || paintedLandingIndex === targetIndex) return;
+    scene.updateMatrixWorld(true);
+    character.bucketLip.getWorldPosition(bucketOrigin);
+    var documentPoint = { x: 0, y: 0 };
+    particlesToDocument(bucketOrigin, documentPoint);
+    var laneDirection = documentPoint.x < documentWidth() / 2 ? 1 : -1;
+    trail.whorl({
+      x: clamp(documentPoint.x + laneDirection * (window.innerWidth <= 520 ? 10 : 24), 22, documentWidth() - 22),
+      y: documentPoint.y + 20,
+      hue: paintHue,
+      radius: window.innerWidth <= 520 ? 46 : 78,
+      turns: 1.42,
+      width: window.innerWidth <= 520 ? 11 : 20,
+      direction: laneDirection,
+      progress: 1
+    });
+    trail.spray({
+      x: documentPoint.x,
+      y: documentPoint.y + 16,
+      hue: paintHue + 150,
+      count: window.innerWidth <= 520 ? 15 : 28,
+      radius: window.innerWidth <= 520 ? 42 : 68
+    });
+    paintedLandingIndex = targetIndex;
+  }
+
   function updateRopeEndpoints(target) {
     scene.updateMatrixWorld(true);
     character.throwingHand.getWorldPosition(ropeOrigin);
@@ -287,10 +383,15 @@
     character.bucketLip.getWorldPosition(bucketOrigin);
     if (previousBucketOrigin.lengthSq() > 0 && delta > 0) {
       bucketVelocity.copy(bucketOrigin).sub(previousBucketOrigin).multiplyScalar(1 / delta);
+      var bucketSpeed = bucketVelocity.length();
+      if (bucketSpeed > 280) bucketVelocity.multiplyScalar(280 / bucketSpeed);
     } else {
       bucketVelocity.set(0, 0, 0);
     }
     previousBucketOrigin.copy(bucketOrigin);
+    paintHue = (paintHue + (wide ? 22 : 7) + delta * 80) % 360;
+    if (character.setPaintHue) character.setPaintHue(paintHue);
+    particles.setHue(paintHue);
     paintVelocity.set(
       wide ? (targetIndex % 2 ? -165 : 165) : -55,
       wide ? 65 + Math.sin(progress * Math.PI) * 85 : 15,
@@ -324,12 +425,16 @@
     stateFrom.y = currentPoint.y;
     stateTo.x = target.x;
     stateTo.y = currentPoint.y;
+    resetBucketMotion();
     setState('walk', timestamp);
   }
 
   function advanceState(timestamp) {
     switch (state) {
-      case 'entering': setState('bottom-paint', timestamp); break;
+      case 'entering':
+        resetBucketMotion();
+        setState('bottom-paint', timestamp);
+        break;
       case 'bottom-paint':
         if (guidanceEnabled || targetIsVisible(targetIndex)) enterWalk(timestamp);
         break;
@@ -346,6 +451,7 @@
       case 'climb': setState('pull-bucket', timestamp); break;
       case 'pull-bucket':
         if (rope) rope.hide();
+        resetBucketMotion();
         setState('paint-swing', timestamp);
         break;
       case 'paint-swing':
@@ -372,14 +478,16 @@
     } else if (state === 'bottom-paint') {
       positionCharacter(stateTo, -1);
       character.setPose('paint-swing', progress, timestamp * 0.003);
-      if (progress < 1) emitStream(36, false, progress, delta);
+      if (progress < 1) emitStream(PAINT_RATES.pour, false, progress, delta);
       if (progress > 0.68 && progress < 1 && !paintBurstEmitted) {
         paintBurstEmitted = true;
-        emitPaint(34, true, progress, delta);
+        emitPaint(window.innerWidth <= 520 ? 44 : 72, true, progress, delta);
       }
+      landingPaint(progress);
     } else if (state === 'walk') {
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: stateFrom.y }, facing);
       character.setPose('walk', progress, timestamp * 0.009);
+      if (progress > 0.1 && progress < 0.92) emitStream(PAINT_RATES.drip, false, progress, delta);
     } else if (state === 'coil-rope') {
       positionCharacter(stateTo, facing);
       character.setPose('coil-rope', progress, timestamp * 0.006);
@@ -393,6 +501,7 @@
         scenePointFromDocument(target, ropeAnchor, 34);
         rope.throwBetween(ropeOrigin, ropeAnchor, DURATIONS['throw-rope'] * 0.88);
       }
+      updateRopeEndpoints(target);
     } else if (state === 'brace') {
       positionCharacter(stateTo, facing);
       character.setPose('brace', progress, timestamp * 0.004);
@@ -409,11 +518,12 @@
     } else if (state === 'paint-swing') {
       positionCharacter(stateTo, facing);
       character.setPose('paint-swing', progress, timestamp * 0.003);
-      if (progress < 1) emitStream(42, false, progress, delta);
+      if (progress < 1) emitStream(PAINT_RATES.swing, false, progress, delta);
       if (progress > 0.5 && progress < 1 && !paintBurstEmitted) {
         paintBurstEmitted = true;
-        emitPaint(44, true, progress, delta);
+        emitPaint(window.innerWidth <= 520 ? 52 : 78, true, progress, delta);
       }
+      landingPaint(progress);
     } else if (state === 'portrait-rest') {
       positionCharacter(waypoints[waypoints.length - 1], 1);
       character.setPose('rest', 1, timestamp * 0.0015);
@@ -428,13 +538,14 @@
     particles.update(delta);
 
     if (DURATIONS[state] && progress >= 1) advanceState(timestamp);
+    if ((state === 'bottom-paint' || state === 'paint-swing') && progress >= 1) pauseUntilTargetVisible();
   }
 
   function finishLoop() {
     active = false;
     if (frameRequest) window.cancelAnimationFrame(frameRequest);
     frameRequest = 0;
-    removeRuntimeListeners();
+    if (state !== 'portrait-rest') removeRuntimeListeners();
   }
 
   function frame(timestamp) {
@@ -468,6 +579,14 @@
   function cancelJourney() {
     disableGuidance();
     if (particles) particles.clear();
+    if (!character) {
+      cancelledBeforeInitialization = true;
+      if (bottomObserver) bottomObserver.disconnect();
+      detachInputListeners();
+      setState('cancelled-rest', window.performance.now());
+      requestFallback();
+      return;
+    }
     if (!character || state === 'portrait-rest' || state === 'cancelled-rest') return;
     if (rope) rope.hide();
     stateFrom.x = currentPoint.x;
@@ -486,6 +605,7 @@
     window.removeEventListener('resize', scheduleLayout);
     window.removeEventListener('orientationchange', scheduleLayout);
     document.removeEventListener('toggle', scheduleLayout, true);
+    window.removeEventListener('scroll', resumeIfTargetVisible);
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame);
     layoutFrame = 0;
   }
@@ -524,6 +644,7 @@
   }
 
   function initializeThree(module) {
+    if (cancelledBeforeInitialization || state === 'cancelled-rest') return;
     THREE = module;
     if (!THREE || !liveCanvas || !trail || typeof PaintJourney.createCharacter !== 'function' ||
         typeof PaintJourney.createRope !== 'function' || typeof PaintJourney.createParticles !== 'function') {
@@ -539,7 +660,12 @@
     resizeRenderer();
 
     character = PaintJourney.createCharacter({ THREE: THREE, scene: scene });
-    rope = PaintJourney.createRope({ THREE: THREE, scene: scene, segments: 20 });
+    rope = PaintJourney.createRope({
+      THREE: THREE,
+      scene: scene,
+      segments: 20,
+      radius: window.innerWidth <= 520 ? 0.88 : 1.35
+    });
     particles = PaintJourney.createParticles({
       THREE: THREE,
       scene: scene,
@@ -560,7 +686,6 @@
     window.addEventListener('resize', scheduleLayout, { passive: true });
     window.addEventListener('orientationchange', scheduleLayout, { passive: true });
     document.addEventListener('toggle', scheduleLayout, true);
-    attachInputListeners();
     computeWaypoints();
     if (waypoints.length !== LEVEL_ORDER.length + 1) throw new Error('Paint journey waypoints are incomplete');
 
@@ -582,6 +707,7 @@
   function beginLoading() {
     if (state !== 'idle') return;
     if (bottomObserver) bottomObserver.disconnect();
+    attachInputListeners();
     setState('loading', window.performance.now());
     import(THREE_URL).then(initializeThree).catch(failLive);
   }

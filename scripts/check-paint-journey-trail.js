@@ -34,6 +34,9 @@ function createHarness(options = {}) {
         return { addColorStop() {} };
       },
       arc(...args) { record.push(['arc', ...args]); },
+      moveTo(...args) { record.push(['moveTo', ...args]); },
+      lineTo(...args) { record.push(['lineTo', ...args]); },
+      stroke() { record.push(['stroke']); },
       fill() {},
       fillRect(...args) { record.push(['fillRect', ...args]); },
       drawImage() {},
@@ -219,11 +222,26 @@ function testDetailsToggleRefreshesExclusions() {
   assert.equal(harness.selectorQueryCount(), 2, 'details toggle must rebuild exclusions');
 }
 
+function testWhorlDrawsConnectedFullSpectrumStroke() {
+  const harness = createHarness();
+  harness.operations.length = 0;
+
+  harness.trail.whorl({ x: 60, y: 90, hue: 25, radius: 48, turns: 1.4, width: 14 });
+
+  const moves = harness.operations.filter((operation) => operation[0] === 'moveTo');
+  const lines = harness.operations.filter((operation) => operation[0] === 'lineTo');
+  const strokes = harness.operations.filter((operation) => operation[0] === 'stroke');
+  assert.ok(moves.length >= 12, 'whorl must build multiple connected spectrum segments');
+  assert.ok(lines.length >= 12, 'whorl must draw connected line segments');
+  assert.ok(strokes.length >= 12, 'whorl must advance color along the spectrum');
+}
+
 testDocumentCoordinatesUseCanvasOrigin();
 testStampsReuseExclusionsUntilResize();
 testStaticSpectrumUsesLocalExclusions();
 testScrollRefreshesExclusionsOncePerFrame();
 testContentResizeRefreshesExclusions();
 testDetailsToggleRefreshesExclusions();
+testWhorlDrawsConnectedFullSpectrumStroke();
 
 console.log('PASS: paint journey trail behavior');

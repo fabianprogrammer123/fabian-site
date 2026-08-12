@@ -79,6 +79,16 @@ class Geometry {
 class Material {
   constructor(options = {}) {
     Object.assign(this, options);
+    if (typeof this.color === 'number') {
+      this.color = {
+        hue: null,
+        setHSL(hue, saturation, lightness) {
+          this.hue = hue;
+          this.saturation = saturation;
+          this.lightness = lightness;
+        }
+      };
+    }
     this.disposeCount = 0;
   }
 
@@ -233,8 +243,19 @@ function testLightsStayInsideCharacterRig() {
   assert.deepEqual(scene.children, [character.root], 'lights must not be added as scene-global children');
 }
 
+function testBucketPaintSurfaceTracksSpectrumHue() {
+  const { character } = createCharacter();
+  const surface = character.root.getObjectByName('paint-surface');
+
+  assert.ok(surface, 'bucket must expose a visible paint surface');
+  assert.equal(typeof character.setPaintHue, 'function', 'character must expose paint hue control');
+  character.setPaintHue(270);
+  assert.equal(surface.material.color.hue, 0.75, 'paint surface must use the requested spectrum hue');
+}
+
 testWalkPlantsAlternatingSupportFeet();
 testBucketFollowsStrideWithPhaseLag();
 testLightsStayInsideCharacterRig();
+testBucketPaintSurfaceTracksSpectrumHue();
 
 console.log('PASS: paint journey character behavior');

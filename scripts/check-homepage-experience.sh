@@ -53,6 +53,8 @@ for text in \
   'id="journey-paint-layer"' \
   'id="journey-webgl-layer"' \
   'class="journey-content"' \
+  'text-shadow: 0 0 3px #fff' \
+  '.paint-finale.is-live' \
   'pointer-events: none'; do
   require_text "$home" "$text"
 done
@@ -139,6 +141,8 @@ for text in \
   'pull-bucket' \
   'paint-swing' \
   'rest' \
+  'setPaintHue' \
+  'paint-surface' \
   'HemisphereLight' \
   'DirectionalLight' \
   'rig-lighting' \
@@ -160,6 +164,8 @@ for text in \
   require_text "$rope" "$text"
 done
 
+node "$root/scripts/check-paint-journey-rope.js"
+
 test -f "$particles" || fail "missing assets/paint-journey-particles.js"
 
 for text in \
@@ -178,6 +184,8 @@ done
 node "$root/scripts/check-paint-journey-particles.js"
 
 test -f "$journey" || fail "missing assets/paint-journey.js"
+
+node "$root/scripts/check-paint-journey-orchestrator.js"
 
 for text in \
   'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js' \
@@ -201,6 +209,14 @@ for text in \
   'keydown' \
   'Escape' \
   'particles.clear()' \
+  'cancelledBeforeInitialization' \
+  'pauseUntilTargetVisible' \
+  'resumeIfTargetVisible' \
+  'previousBucketOrigin.set(0, 0, 0)' \
+  'portraitPoint' \
+  'trail.whorl' \
+  'PAINT_RATES' \
+  "classList.toggle('is-live'" \
   'webglcontextlost'; do
   require_text "$journey" "$text"
 done

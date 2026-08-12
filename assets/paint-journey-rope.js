@@ -12,7 +12,7 @@
       throw new Error('PaintJourney.createRope requires THREE and a scene');
     }
 
-    var radius = Math.max(1.1, Number(options.radius) || 1.65);
+    var radius = Math.max(0.8, Number(options.radius) || 1.35);
     var ropeGroup = new THREE.Group();
     ropeGroup.name = 'paint-journey-rope';
     ropeGroup.visible = false;
