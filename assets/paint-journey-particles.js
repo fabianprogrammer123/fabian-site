@@ -216,17 +216,23 @@
       if (Number.isFinite(nextHue)) hue = ((nextHue % 360) + 360) % 360;
     }
 
+    function clear() {
+      if (disposed) return;
+      activeCount = 0;
+      life.fill(0);
+      geometry.setDrawRange(0, 0);
+    }
+
     function dispose() {
       if (disposed) return;
+      clear();
       disposed = true;
-      activeCount = 0;
-      geometry.setDrawRange(0, 0);
       if (points.parent) points.parent.remove(points);
       geometry.dispose();
       material.dispose();
     }
 
-    var api = { emit: emit, burst: burst, update: update, setHue: setHue, dispose: dispose };
+    var api = { emit: emit, burst: burst, update: update, setHue: setHue, clear: clear, dispose: dispose };
     Object.defineProperty(api, 'activeCount', { enumerable: true, get: function () { return activeCount; } });
     return api;
   };

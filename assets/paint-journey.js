@@ -467,6 +467,7 @@
 
   function cancelJourney() {
     disableGuidance();
+    if (particles) particles.clear();
     if (!character || state === 'portrait-rest' || state === 'cancelled-rest') return;
     if (rope) rope.hide();
     stateFrom.x = currentPoint.x;

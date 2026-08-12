@@ -169,10 +169,13 @@ for text in \
   'hue = (hue +' \
   'emit' \
   'burst' \
+  'clear' \
   'activeCount' \
   'trail.stamp'; do
   require_text "$particles" "$text"
 done
+
+node "$root/scripts/check-paint-journey-particles.js"
 
 test -f "$journey" || fail "missing assets/paint-journey.js"
 
@@ -197,6 +200,7 @@ for text in \
   'pointerdown' \
   'keydown' \
   'Escape' \
+  'particles.clear()' \
   'webglcontextlost'; do
   require_text "$journey" "$text"
 done
