@@ -1,0 +1,233 @@
+(function paintJourneyParticles(window) {
+  'use strict';
+
+  var PaintJourney = window.PaintJourney = window.PaintJourney || {};
+
+  PaintJourney.createParticles = function createParticles(options) {
+    options = options || {};
+    var THREE = options.THREE;
+    var scene = options.scene;
+    var trail = options.trail;
+    if (!THREE || !scene || !trail || typeof trail.stamp !== 'function') {
+      throw new Error('PaintJourney.createParticles requires THREE, a scene, and a trail');
+    }
+
+    var mobile = Boolean(options.mobile);
+    var maximum = mobile ? 260 : 600;
+    var requestedCapacity = Math.floor(Number(options.capacity) || maximum);
+    var capacity = Math.max(1, Math.min(maximum, requestedCapacity));
+    var positions = new Float32Array(capacity * 3);
+    var colors = new Float32Array(capacity * 3);
+    var velocityX = new Float32Array(capacity);
+    var velocityY = new Float32Array(capacity);
+    var velocityZ = new Float32Array(capacity);
+    var life = new Float32Array(capacity);
+    var particleHue = new Float32Array(capacity);
+    var documentX = new Float32Array(capacity);
+    var documentY = new Float32Array(capacity);
+
+    var geometry = new THREE.BufferGeometry();
+    var positionAttribute = new THREE.BufferAttribute(positions, 3);
+    var colorAttribute = new THREE.BufferAttribute(colors, 3);
+    geometry.setAttribute('position', positionAttribute);
+    geometry.setAttribute('color', colorAttribute);
+    geometry.setDrawRange(0, 0);
+    var material = new THREE.PointsMaterial({
+      size: mobile ? 3.8 : 5.2,
+      sizeAttenuation: false,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.86,
+      depthWrite: false
+    });
+    var points = new THREE.Points(geometry, material);
+    points.name = 'paint-journey-particles';
+    points.frustumCulled = false;
+    points.renderOrder = 5;
+    scene.add(points);
+
+    var activeCount = 0;
+    var hue = 0;
+    var frameAverage = 16;
+    var seed = 0x9e3779b9;
+    var disposed = false;
+    var gravity = Number.isFinite(Number(options.gravity)) ? Number(options.gravity) : -420;
+    var drag = Number.isFinite(Number(options.drag)) ? Math.max(0, Number(options.drag)) : 1.65;
+    var pagePlaneZ = Number.isFinite(Number(options.pagePlaneZ)) ? Number(options.pagePlaneZ) : 0;
+    var toDocument = typeof options.toDocument === 'function' ? options.toDocument : null;
+    var color = new THREE.Color();
+    var scenePoint = new THREE.Vector3();
+    var documentPoint = { x: 0, y: 0 };
+    var stampPayload = { x: 0, y: 0, hue: 0, radius: 0, alpha: 0 };
+
+    function random() {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    }
+
+    function component(vector, key) {
+      var value = Number(vector && vector[key]);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function setParticleColor(index, nextHue) {
+      color.setHSL(((nextHue % 360) + 360) % 360 / 360, 0.9, 0.55 + random() * 0.08);
+      var offset = index * 3;
+      colors[offset] = color.r;
+      colors[offset + 1] = color.g;
+      colors[offset + 2] = color.b;
+    }
+
+    function addParticles(config, widerCone) {
+      if (disposed || !config || !config.origin) return 0;
+      var emissionScale = frameAverage > 22 ? 0.48 : 1;
+      var requested = Math.max(0, Math.floor(Number(config.count) || (widerCone ? 42 : 8)));
+      var count = Math.max(requested > 0 ? 1 : 0, Math.floor(requested * emissionScale));
+      count = Math.min(count, capacity - activeCount);
+      var origin = config.origin;
+      var velocity = config.velocity || {};
+      var bucketVelocity = config.bucketVelocity || {};
+      var baseHue = Number.isFinite(Number(config.hue)) ? Number(config.hue) : hue;
+      var spread = widerCone ? 190 : 52;
+      var depthSpread = widerCone ? 125 : 34;
+
+      for (var emitted = 0; emitted < count; emitted += 1) {
+        var index = activeCount;
+        activeCount += 1;
+        var offset = index * 3;
+        positions[offset] = component(origin, 'x');
+        positions[offset + 1] = component(origin, 'y');
+        positions[offset + 2] = Math.max(pagePlaneZ + 0.5, component(origin, 'z'));
+        velocityX[index] = component(velocity, 'x') + component(bucketVelocity, 'x') + (random() - 0.5) * spread;
+        velocityY[index] = component(velocity, 'y') + component(bucketVelocity, 'y') + (random() - 0.5) * spread;
+        velocityZ[index] = component(velocity, 'z') + component(bucketVelocity, 'z') - (0.3 + random()) * depthSpread;
+        life[index] = (widerCone ? 0.65 : 0.9) + random() * (widerCone ? 0.55 : 0.85);
+        particleHue[index] = (baseHue + emitted * (widerCone ? 8.5 : 3.5)) % 360;
+        documentX[index] = 0;
+        documentY[index] = 0;
+        setParticleColor(index, particleHue[index]);
+      }
+      geometry.setDrawRange(0, activeCount);
+      positionAttribute.needsUpdate = true;
+      colorAttribute.needsUpdate = true;
+      return count;
+    }
+
+    function emit(config) {
+      return addParticles(config, false);
+    }
+
+    function burst(config) {
+      config = config || {};
+      return addParticles(config, true);
+    }
+
+    function copySlot(target, source) {
+      var targetOffset = target * 3;
+      var sourceOffset = source * 3;
+      positions[targetOffset] = positions[sourceOffset];
+      positions[targetOffset + 1] = positions[sourceOffset + 1];
+      positions[targetOffset + 2] = positions[sourceOffset + 2];
+      colors[targetOffset] = colors[sourceOffset];
+      colors[targetOffset + 1] = colors[sourceOffset + 1];
+      colors[targetOffset + 2] = colors[sourceOffset + 2];
+      velocityX[target] = velocityX[source];
+      velocityY[target] = velocityY[source];
+      velocityZ[target] = velocityZ[source];
+      life[target] = life[source];
+      particleHue[target] = particleHue[source];
+      documentX[target] = documentX[source];
+      documentY[target] = documentY[source];
+    }
+
+    function retire(index) {
+      activeCount -= 1;
+      if (index !== activeCount) copySlot(index, activeCount);
+      life[activeCount] = 0;
+    }
+
+    function mapToDocument(index) {
+      var offset = index * 3;
+      scenePoint.set(positions[offset], positions[offset + 1], pagePlaneZ);
+      if (toDocument) {
+        var mapped = toDocument(scenePoint, documentPoint);
+        if (mapped && mapped !== documentPoint) {
+          documentPoint.x = mapped.x;
+          documentPoint.y = mapped.y;
+        }
+      } else {
+        documentPoint.x = scenePoint.x + (window.scrollX || window.pageXOffset || 0);
+        documentPoint.y = scenePoint.y + (window.scrollY || window.pageYOffset || 0);
+      }
+      documentX[index] = Number(documentPoint.x) || 0;
+      documentY[index] = Number(documentPoint.y) || 0;
+    }
+
+    function stampParticle(index, speed) {
+      mapToDocument(index);
+      stampPayload.x = documentX[index];
+      stampPayload.y = documentY[index];
+      stampPayload.hue = particleHue[index];
+      stampPayload.radius = Math.min(mobile ? 9 : 13, 3 + speed * 0.018);
+      stampPayload.alpha = 0.48;
+      trail.stamp(stampPayload);
+    }
+
+    function update(delta) {
+      if (disposed) return;
+      delta = Math.max(0, Math.min(0.05, Number(delta) || 0));
+      frameAverage += (delta * 1000 - frameAverage) * 0.08;
+      hue = (hue + delta * 52) % 360;
+      var damping = Math.exp(-drag * delta);
+      var index = 0;
+
+      while (index < activeCount) {
+        var offset = index * 3;
+        var previousZ = positions[offset + 2];
+        velocityY[index] += gravity * delta;
+        velocityX[index] *= damping;
+        velocityY[index] *= damping;
+        velocityZ[index] *= damping;
+        positions[offset] += velocityX[index] * delta;
+        positions[offset + 1] += velocityY[index] * delta;
+        positions[offset + 2] += velocityZ[index] * delta;
+        life[index] -= delta;
+
+        if (previousZ > pagePlaneZ && positions[offset + 2] <= pagePlaneZ) {
+          var speed = Math.sqrt(velocityX[index] * velocityX[index] + velocityY[index] * velocityY[index]);
+          stampParticle(index, speed);
+          retire(index);
+          continue;
+        }
+        if (life[index] <= 0) {
+          retire(index);
+          continue;
+        }
+        index += 1;
+      }
+
+      geometry.setDrawRange(0, activeCount);
+      positionAttribute.needsUpdate = true;
+      colorAttribute.needsUpdate = true;
+    }
+
+    function setHue(nextHue) {
+      nextHue = Number(nextHue);
+      if (Number.isFinite(nextHue)) hue = ((nextHue % 360) + 360) % 360;
+    }
+
+    function dispose() {
+      if (disposed) return;
+      disposed = true;
+      activeCount = 0;
+      geometry.setDrawRange(0, 0);
+      if (points.parent) points.parent.remove(points);
+      geometry.dispose();
+      material.dispose();
+    }
+
+    var api = { emit: emit, burst: burst, update: update, setHue: setHue, dispose: dispose };
+    Object.defineProperty(api, 'activeCount', { enumerable: true, get: function () { return activeCount; } });
+    return api;
+  };
+}(window));

@@ -8,6 +8,8 @@ nav="$root/assets/homepage-navigation.js"
 finale="$root/assets/paint-finale.js"
 trail="$root/assets/paint-journey-trail.js"
 character="$root/assets/paint-journey-character.js"
+rope="$root/assets/paint-journey-rope.js"
+particles="$root/assets/paint-journey-particles.js"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -144,5 +146,31 @@ for text in \
 done
 
 node "$root/scripts/check-paint-journey-character.js"
+
+test -f "$rope" || fail "missing assets/paint-journey-rope.js"
+
+for text in \
+  'PaintJourney.createRope' \
+  'throwBetween' \
+  'setEndpoints' \
+  'caught' \
+  'CatmullRomCurve3' \
+  'dispose'; do
+  require_text "$rope" "$text"
+done
+
+test -f "$particles" || fail "missing assets/paint-journey-particles.js"
+
+for text in \
+  'PaintJourney.createParticles' \
+  'capacity' \
+  'bucketVelocity' \
+  'hue = (hue +' \
+  'emit' \
+  'burst' \
+  'activeCount' \
+  'trail.stamp'; do
+  require_text "$particles" "$text"
+done
 
 printf 'PASS: homepage CV and navigation contract\n'
