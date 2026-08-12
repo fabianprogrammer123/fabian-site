@@ -43,4 +43,17 @@ require_text "$nav" 'IntersectionObserver'
 require_text "$nav" 'aria-current'
 require_text "$nav" "prefers-reduced-motion: reduce"
 
+for text in \
+  'id="paint-finale"' \
+  'id="paint-finale-canvas"' \
+  'class="finale-walker"' \
+  'class="paint-bucket"' \
+  'aria-hidden="true"' \
+  'assets/paint-finale.js' \
+  '@media (prefers-reduced-motion: reduce)'; do
+  require_text "$home" "$text"
+done
+
+test -f "$finale" || fail "missing assets/paint-finale.js"
+
 printf 'PASS: homepage CV and navigation contract\n'
