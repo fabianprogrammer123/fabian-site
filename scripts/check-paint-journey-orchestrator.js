@@ -25,6 +25,10 @@ requirePattern(/function\s+pauseUntilTargetVisible\s*\([^)]*\)\s*\{[\s\S]{0,500}
   'offscreen pausing must let airborne paint drain before stopping the renderer');
 requirePattern(/function\s+resumeIfTargetVisible\s*\(/,
   'a paused journey must resume when its next waypoint becomes visible');
+requirePattern(/function\s+scheduleRestLayout\s*\([\s\S]{0,500}state\s*!==\s*'portrait-rest'[\s\S]{0,500}scheduleLayout\(\)/,
+  'the finished character must stay anchored beside the portrait while the visitor scrolls');
+requirePattern(/addEventListener\('scroll',\s*scheduleRestLayout/,
+  'portrait rest must subscribe to scroll-driven viewport alignment');
 requirePattern(/state === 'throw-rope'[\s\S]{0,1400}updateRopeEndpoints\(target\)/,
   'the rope origin must follow the moving throw hand every frame');
 requirePattern(/trail\.whorl\(/,

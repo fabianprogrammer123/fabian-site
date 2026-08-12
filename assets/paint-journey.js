@@ -259,6 +259,11 @@
     layoutFrame = window.requestAnimationFrame(recomputeLayout);
   }
 
+  function scheduleRestLayout() {
+    if (state !== 'portrait-rest' || active) return;
+    scheduleLayout();
+  }
+
   function disableGuidance() {
     guidanceEnabled = false;
     programmaticScroll = false;
@@ -545,7 +550,11 @@
     active = false;
     if (frameRequest) window.cancelAnimationFrame(frameRequest);
     frameRequest = 0;
-    if (state !== 'portrait-rest') removeRuntimeListeners();
+    if (state === 'portrait-rest') {
+      window.addEventListener('scroll', scheduleRestLayout, { passive: true });
+    } else {
+      removeRuntimeListeners();
+    }
   }
 
   function frame(timestamp) {
@@ -606,6 +615,7 @@
     window.removeEventListener('orientationchange', scheduleLayout);
     document.removeEventListener('toggle', scheduleLayout, true);
     window.removeEventListener('scroll', resumeIfTargetVisible);
+    window.removeEventListener('scroll', scheduleRestLayout);
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame);
     layoutFrame = 0;
   }
