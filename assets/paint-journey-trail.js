@@ -38,6 +38,8 @@
     var width = 0;
     var height = 0;
     var dpr = 1;
+    var originX = 0;
+    var originY = 0;
     var exclusionZones = [];
     var resizeFrame = 0;
     var destroyed = false;
@@ -53,8 +55,8 @@
         var rect = matches[index].getBoundingClientRect();
         if (!rect.width || !rect.height) continue;
         zones.push({
-          x: Math.max(0, rect.left + scrollX - EXCLUSION_PADDING),
-          y: Math.max(0, rect.top + scrollY - EXCLUSION_PADDING),
+          x: Math.max(0, rect.left + scrollX - originX - EXCLUSION_PADDING),
+          y: Math.max(0, rect.top + scrollY - originY - EXCLUSION_PADDING),
           width: rect.width + EXCLUSION_PADDING * 2,
           height: rect.height + EXCLUSION_PADDING * 2
         });
@@ -77,7 +79,6 @@
     }
 
     function withContentProtection(draw) {
-      rebuildExclusions();
       context.save();
       context.beginPath();
       context.rect(0, 0, width, height);
@@ -96,21 +97,23 @@
       var hue = ((Number.isFinite(requestedHue) ? requestedHue : 0) % 360 + 360) % 360;
       var radius = Math.max(1, Number(point.radius) || 12);
       var alpha = point.alpha === undefined ? 0.6 : Math.max(0, Math.min(1, point.alpha));
-      var gradient = context.createRadialGradient(point.x, point.y, radius * 0.08, point.x, point.y, radius);
+      var localX = point.x - originX;
+      var localY = point.y - originY;
+      var gradient = context.createRadialGradient(localX, localY, radius * 0.08, localX, localY, radius);
       gradient.addColorStop(0, 'hsl(' + hue + ' 94% 57% / ' + alpha + ')');
       gradient.addColorStop(0.58, 'hsl(' + hue + ' 90% 52% / ' + (alpha * 0.68) + ')');
       gradient.addColorStop(1, 'hsl(' + hue + ' 88% 48% / 0)');
       context.fillStyle = gradient;
       context.beginPath();
-      context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      context.arc(localX, localY, radius, 0, Math.PI * 2);
       context.fill();
 
       context.save();
       context.globalCompositeOperation = 'destination-out';
       for (var gap = 0; gap < 3; gap += 1) {
         var gapSeed = seeded(pointSeed(point, gap));
-        var gapX = point.x + (gapSeed - 0.5) * radius * 1.25;
-        var gapY = point.y + (seeded(pointSeed(point, gap + 13)) - 0.5) * radius * 1.1;
+        var gapX = localX + (gapSeed - 0.5) * radius * 1.25;
+        var gapY = localY + (seeded(pointSeed(point, gap + 13)) - 0.5) * radius * 1.1;
         context.fillStyle = 'rgba(0, 0, 0, ' + (0.18 + gapSeed * 0.2) + ')';
         context.fillRect(gapX, gapY, radius * (0.16 + gapSeed * 0.12), Math.max(1, radius * 0.055));
       }
@@ -180,10 +183,13 @@
       var size = documentSize();
       var x = index % 2 ? size.width - 28 : 28;
       var y = Math.max(28, Math.min(size.height - 28, point.y));
+      var localX = x - originX;
+      var localY = y - originY;
       for (var zoneIndex = 0; zoneIndex < exclusionZones.length; zoneIndex += 1) {
         var zone = exclusionZones[zoneIndex];
-        if (x >= zone.x && x <= zone.x + zone.width && y >= zone.y && y <= zone.y + zone.height) {
-          y = Math.min(size.height - 28, zone.y + zone.height + 18);
+        if (localX >= zone.x && localX <= zone.x + zone.width && localY >= zone.y && localY <= zone.y + zone.height) {
+          y = Math.min(size.height - 28, zone.y + zone.height + originY + 18);
+          localY = y - originY;
         }
       }
       return { x: x, y: y };
@@ -191,7 +197,6 @@
 
     function drawStaticSpectrum(waypoints) {
       if (destroyed || !Array.isArray(waypoints) || waypoints.length < 2) return;
-      rebuildExclusions();
       var lanePoints = [];
       for (var index = 0; index < waypoints.length; index += 1) {
         if (Number.isFinite(waypoints[index].y)) lanePoints.push(edgeLanePoint(waypoints[index], index));
@@ -239,6 +244,9 @@
       canvas.height = Math.max(1, Math.ceil(height * dpr));
       canvas.style.width = width + 'px';
       canvas.style.height = height + 'px';
+      var canvasRect = canvas.getBoundingClientRect();
+      originX = canvasRect.left + (window.scrollX || window.pageXOffset || 0);
+      originY = canvasRect.top + (window.scrollY || window.pageYOffset || 0);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (previous) context.drawImage(previous, 0, 0, previousWidth, previousHeight);
       rebuildExclusions();

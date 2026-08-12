@@ -114,4 +114,6 @@ for text in \
   require_text "$trail" "$text"
 done
 
+node "$root/scripts/check-paint-journey-trail.js"
+
 printf 'PASS: homepage CV and navigation contract\n'
