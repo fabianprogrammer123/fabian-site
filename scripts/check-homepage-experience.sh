@@ -6,6 +6,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 home="$root/index.html"
 nav="$root/assets/homepage-navigation.js"
 finale="$root/assets/paint-finale.js"
+trail="$root/assets/paint-journey-trail.js"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -95,6 +96,22 @@ for text in \
   'drawSplatters' \
   'animationComplete'; do
   require_text "$finale" "$text"
+done
+
+test -f "$trail" || fail "missing assets/paint-journey-trail.js"
+
+for text in \
+  'PaintJourney.createTrail' \
+  'getExclusionZones' \
+  'hsl(' \
+  'drawStaticSpectrum' \
+  'devicePixelRatio' \
+  'stamp' \
+  'ribbon' \
+  'spray' \
+  'resize' \
+  'destroy'; do
+  require_text "$trail" "$text"
 done
 
 printf 'PASS: homepage CV and navigation contract\n'
