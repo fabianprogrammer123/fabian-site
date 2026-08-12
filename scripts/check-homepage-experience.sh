@@ -56,4 +56,15 @@ done
 
 test -f "$finale" || fail "missing assets/paint-finale.js"
 
+for text in \
+  'IntersectionObserver' \
+  'requestAnimationFrame' \
+  'devicePixelRatio' \
+  'prefers-reduced-motion: reduce' \
+  'drawRibbons' \
+  'drawSplatters' \
+  'animationComplete'; do
+  require_text "$finale" "$text"
+done
+
 printf 'PASS: homepage CV and navigation contract\n'
