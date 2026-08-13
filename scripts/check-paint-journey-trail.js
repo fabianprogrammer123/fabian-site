@@ -56,7 +56,11 @@ function createHarness(options = {}) {
       setTransform(...args) { record.push(['setTransform', ...args]); },
       set lineWidth(value) { record.push(['lineWidth', value]); },
       set strokeStyle(value) { record.push(['strokeStyle', value]); },
-      set fillStyle(value) { record.push(['fillStyle', value]); }
+      set fillStyle(value) { record.push(['fillStyle', value]); },
+      set globalCompositeOperation(value) { record.push(['composite', value]); },
+      set globalAlpha(value) { record.push(['globalAlpha', value]); },
+      set lineCap(value) { record.push(['lineCap', value]); },
+      set lineJoin(value) { record.push(['lineJoin', value]); }
     };
   }
 
@@ -259,16 +263,20 @@ function testSameSizeResizeKeepsTheExistingBackingStore() {
     'same-size resize must not allocate and copy a document-sized temporary canvas');
 }
 
-function testStaticSpectrumUsesLocalExclusions() {
-  const harness = createHarness({
-    contentRect: { left: 15, top: 83, width: 16, height: 20 }
-  });
+function testStaticSpectrumFlowsThroughEverySemanticBand() {
+  const harness = createHarness();
   harness.operations.length = 0;
 
-  harness.trail.drawStaticSpectrum([{ y: 100 }, { y: 200 }]);
+  harness.trail.drawStaticSpectrum([{ y: 120 }, { y: 560 }, { y: 1040 }, { y: 1660 }]);
 
-  const firstArc = harness.operations.find((operation) => operation[0] === 'arc');
-  assert.deepEqual(firstArc.slice(1, 3), [12, 95], 'edge lane must move below a local exclusion zone');
+  const broadStrokes = harness.operations.filter((operation) =>
+    operation[0] === 'lineWidth' && operation[1] >= 110
+  );
+  const cubicPaths = harness.operations.filter((operation) => operation[0] === 'bezierCurveTo');
+  assert.ok(broadStrokes.length >= 4,
+    'the reduced-motion composition must wash broad pigment through every semantic page band');
+  assert.ok(cubicPaths.length >= 12,
+    'the static spectrum must use layered fluid paths instead of a narrow alternating edge ribbon');
 }
 
 function testScrollRefreshesExclusionsOncePerFrame() {
@@ -448,12 +456,49 @@ function testVeilSpreadsTranslucentPaintAcrossThePage() {
     'impact satellites must remain in the pool pigment family for realistic paint behavior');
 }
 
+function testFluidCurrentLayersRichWetPigmentAtBoundedCost() {
+  const harness = createHarness();
+  harness.operations.length = 0;
+
+  assert.equal(typeof harness.trail.flow, 'function',
+    'trail must expose one authored fluid-current primitive');
+  harness.trail.flow({
+    from: { x: 960, y: 180 },
+    to: { x: 90, y: 260 },
+    hue: 226,
+    width: 280,
+    progress: 0.72,
+    seed: 4
+  });
+
+  const curves = harness.operations.filter((operation) => operation[0] === 'bezierCurveTo');
+  const strokes = harness.operations.filter((operation) => operation[0] === 'stroke');
+  const widths = harness.operations.filter((operation) => operation[0] === 'lineWidth').map((operation) => operation[1]);
+  const colors = harness.operations.filter((operation) => operation[0] === 'strokeStyle').map((operation) => operation[1]);
+  const composites = harness.operations.filter((operation) => operation[0] === 'composite').map((operation) => operation[1]);
+  const ellipses = harness.operations.filter((operation) => operation[0] === 'ellipse');
+
+  assert.ok(curves.length >= 4, 'underwash, pigment body, wet edge, and glint must share a fluid cubic path');
+  assert.ok(strokes.length >= 4 && strokes.length <= 10,
+    'a fluid current must be visibly layered while retaining a fixed drawing budget');
+  assert.ok(Math.max(...widths) >= 220 && Math.min(...widths) <= 24,
+    'the current must combine site-wide coverage with a fine wet highlight');
+  assert.ok(colors.every((color) => String(color).startsWith('rgba(')),
+    'all fluid layers must use the grounded RGB pigment palette');
+  assert.ok(new Set(colors).size >= 4,
+    'the pigment body, edge, underwash, and glint must carry distinct tonal depth');
+  assert.ok(composites.includes('multiply') && composites.includes('screen'),
+    'wet pigment depth must combine absorbent multiply layers with a restrained surface glint');
+  assert.ok(ellipses.length >= 3 && ellipses.length <= 16,
+    'the current needs a few bounded eddies and droplets rather than random confetti');
+}
+
 testDocumentCoordinatesUseCanvasOrigin();
 testStampsReuseExclusionsUntilResize();
 testStampBatchSharesOneProtectionPass();
 testResizeCanShrinkPastTheOldCanvasWidth();
 testSameSizeResizeKeepsTheExistingBackingStore();
-testStaticSpectrumUsesLocalExclusions();
+testStaticSpectrumFlowsThroughEverySemanticBand();
 testScrollRefreshesExclusionsOncePerFrame();
 testContentResizeRefreshesExclusions();
 testDetailsToggleRefreshesExclusions();
@@ -463,5 +508,6 @@ testFullDocumentCanvasUsesAPixelBudget();
 testWhorlDrawsConnectedPigmentStroke();
 testImpactCreatesWetPoolDripsAndSatelliteSplatter();
 testVeilSpreadsTranslucentPaintAcrossThePage();
+testFluidCurrentLayersRichWetPigmentAtBoundedCost();
 
 console.log('PASS: paint journey trail behavior');

@@ -81,7 +81,17 @@
       context.arc(23, 28, 3.2, 0, TAU);
       context.arc(41, 28, 3.2, 0, TAU);
       context.fill();
-      context.fillRect(26, 42, 12, 2);
+      context.beginPath();
+      context.moveTo(25, 41);
+      context.quadraticCurveTo(32, 47, 40, 40);
+      context.strokeStyle = '#242628';
+      context.lineWidth = 2.4;
+      context.lineCap = 'round';
+      context.stroke();
+      context.beginPath();
+      context.arc(17, 36, 1.7, 0, TAU);
+      context.arc(47, 36, 1.7, 0, TAU);
+      context.fill();
       var texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
       return texture;
@@ -138,39 +148,39 @@
     contactShadow.castShadow = false;
     contactShadow.receiveShadow = false;
 
-    var pelvis = joint('pelvis', root, 0, 60, 0);
-    mesh('pelvis-shell', reusable.sphere, charcoal, pelvis, 0, 0, 0, 12.5, 9.5, 8.5);
+    var pelvis = joint('pelvis', root, 0, 56, 0);
+    mesh('pelvis-shell', reusable.sphere, charcoal, pelvis, 0, 0, 0, 12.8, 9.8, 8.8);
 
     var spine = joint('spine', pelvis, 0, 5, 0);
     var breathingJoint = joint('breathing-joint', spine);
-    mesh('torso', reusable.capsule, charcoal, breathingJoint, 0, 19.5, 0, 1.95, 1.5, 1.25);
-    var neck = joint('neck', spine, 0, 43, 0);
-    mesh('neck-form', reusable.cylinder, offWhite, neck, 0, 4, 0, 5.2, 8, 5.2);
-    var head = joint('head', neck, 0, 12, 0);
-    mesh('dotted-face', reusable.sphere, faceMaterial, head, 0, 0, 0, 11, 12, 10);
-    mesh('cap', reusable.sphere, charcoal, head, 0, 7.5, 0, 11.4, 5.2, 10.3);
+    mesh('torso', reusable.capsule, charcoal, breathingJoint, 0, 18, 0, 2.08, 1.34, 1.34);
+    var neck = joint('neck', spine, 0, 39, 0);
+    mesh('neck-form', reusable.cylinder, offWhite, neck, 0, 3.5, 0, 5, 7, 5);
+    var head = joint('head', neck, 0, 11, 0);
+    mesh('dotted-face', reusable.sphere, faceMaterial, head, 0, 0, 0, 12.5, 13.2, 10.8);
+    mesh('cap', reusable.sphere, charcoal, head, 0, 7.9, 0, 12.8, 5.4, 11.1);
 
     function buildArm(side, name) {
-      var shoulder = joint(name + '-shoulder', spine, side * 15.5, 36, 0);
-      mesh(name + '-shoulder-cap', reusable.sphere, charcoal, shoulder, 0, 0, 0, 7.2, 7.2, 6.5);
-      limb(name + '-upper-arm', shoulder, 24, 5.8, charcoal);
-      var elbow = joint(name + '-elbow', shoulder, 0, -24, 0);
-      mesh(name + '-elbow-cap', reusable.sphere, offWhite, elbow, 0, 0, 0, 5.9, 5.9, 5.5);
-      limb(name + '-forearm', elbow, 22, 5.2, offWhite);
-      var wrist = joint(name + '-wrist', elbow, 0, -22, 0);
-      mesh(name + '-hand', reusable.sphere, offWhite, wrist, 0, -3, 0, 6.3, 6.8, 5.2);
+      var shoulder = joint(name + '-shoulder', spine, side * 14, 32, 0);
+      mesh(name + '-shoulder-cap', reusable.sphere, charcoal, shoulder, 0, 0, 0, 6.2, 6.2, 5.9);
+      limb(name + '-upper-arm', shoulder, 21, 6.1, charcoal);
+      var elbow = joint(name + '-elbow', shoulder, 0, -21, 0);
+      mesh(name + '-elbow-cap', reusable.sphere, offWhite, elbow, 0, 0, 0, 5.4, 5.4, 5.1);
+      limb(name + '-forearm', elbow, 19, 5.6, offWhite);
+      var wrist = joint(name + '-wrist', elbow, 0, -19, 0);
+      mesh(name + '-hand', reusable.sphere, offWhite, wrist, 0, -2.5, 0, 5.9, 6.2, 5.1);
       return { shoulder: shoulder, elbow: elbow, wrist: wrist };
     }
 
     function buildLeg(side, name) {
-      var hip = joint(name + '-hip', pelvis, side * 7.5, -3, 0);
-      mesh(name + '-hip-cap', reusable.sphere, charcoal, hip, 0, 0, 0, 7.2, 7.2, 6.5);
-      limb(name + '-thigh', hip, 29, 7, charcoal);
-      var knee = joint(name + '-knee', hip, 0, -29, 0);
-      mesh(name + '-knee-cap', reusable.sphere, offWhite, knee, 0, 0, 0, 6.6, 6.2, 6.1);
-      limb(name + '-shin', knee, 27, 6, offWhite);
-      var ankle = joint(name + '-ankle', knee, 0, -27, 0);
-      mesh(name + '-shoe', reusable.box, charcoal, ankle, side * 1.2, -3.2, 4, 8.2, 5.5, 13);
+      var hip = joint(name + '-hip', pelvis, side * 7.2, -3, 0);
+      mesh(name + '-hip-cap', reusable.sphere, charcoal, hip, 0, 0, 0, 7, 7, 6.4);
+      limb(name + '-thigh', hip, 26, 7.4, charcoal);
+      var knee = joint(name + '-knee', hip, 0, -26, 0);
+      mesh(name + '-knee-cap', reusable.sphere, offWhite, knee, 0, 0, 0, 6.2, 5.9, 5.8);
+      limb(name + '-shin', knee, 24, 6.5, offWhite);
+      var ankle = joint(name + '-ankle', knee, 0, -24, 0);
+      mesh(name + '-shoe', reusable.box, charcoal, ankle, side * 1.1, -3, 4, 8, 5.2, 12.4);
       return { hip: hip, knee: knee, ankle: ankle };
     }
 
@@ -180,9 +190,9 @@
     var rightLeg = buildLeg(1, 'right');
     var throwingHand = throwingArm.wrist;
 
-    var bucketPose = joint('bucket-pose', bucketArm.wrist, 1, -5, 0);
+    var bucketPose = joint('bucket-pose', bucketArm.wrist, 1, -4, 0);
     var bucketSway = joint('bucket-sway', bucketPose);
-    var bucket = joint('bucket', bucketSway, 3, -16, 0);
+    var bucket = joint('bucket', bucketSway, 3, -14, 0);
     mesh('bucket-body', new THREE.CylinderGeometry(8.8, 7.2, 18, 12, 1, false), offWhite, bucket, 0, 0, 0);
     mesh('bucket-interior', new THREE.CylinderGeometry(8, 8, 1, 16), bucketInteriorMaterial, bucket, 0, 8.55, 0);
     var paintSurface = mesh('paint-surface', new THREE.CylinderGeometry(7.2, 7.2, 0.75, 20), paintMaterial, bucket, 0, 9.08, 0);
@@ -271,147 +281,153 @@
       right: ankleInRoot(rightLeg)
     };
 
-    function plantWalkAnkle(leg, target) {
+    function walkAnkleCorrection(leg, target) {
       var ankle = ankleInRoot(leg);
-      pelvis.position.x += target.x - ankle.x;
-      pelvis.position.y += target.y - ankle.y;
+      return { x: target.x - ankle.x, y: target.y - ankle.y };
+    }
+
+    function flattenFoot(leg) {
       leg.ankle.rotation.z = -(pelvis.rotation.z + leg.hip.rotation.z + leg.knee.rotation.z);
     }
 
+    function applyCarryPose() {
+      throwingArm.shoulder.rotation.z = -0.08;
+      throwingArm.elbow.rotation.z = -0.28;
+      bucketArm.shoulder.rotation.z = 0.18;
+      bucketArm.elbow.rotation.z = 0.34;
+      bucketPose.rotation.z = -0.08;
+    }
+
     function poseWalk(progress, phase) {
-      var cycle = phase + progress * TAU;
-      var stride = Math.sin(cycle);
-      var liftLeft = Math.max(0, Math.sin(cycle));
-      var liftRight = Math.max(0, -Math.sin(cycle));
-      pelvis.position.y += Math.abs(Math.sin(cycle * 2)) * 1.2;
-      pelvis.rotation.y = -stride * 0.045;
-      spine.rotation.y = stride * 0.055;
-      spine.rotation.z = -stride * 0.018;
-      leftLeg.hip.rotation.z = stride * 0.32;
-      rightLeg.hip.rotation.z = -stride * 0.32;
-      leftLeg.knee.rotation.z = -liftLeft * 0.46;
-      rightLeg.knee.rotation.z = -liftRight * 0.46;
-      leftLeg.ankle.rotation.z = -stride * 0.08;
-      rightLeg.ankle.rotation.z = stride * 0.08;
-      throwingArm.shoulder.rotation.z = -stride * 0.22;
-      bucketArm.shoulder.rotation.z = stride * 0.14;
-      throwingArm.elbow.rotation.z = -0.12 - liftRight * 0.12;
-      bucketArm.elbow.rotation.z = 0.15 + liftLeft * 0.08;
-      bucketPose.rotation.z = -Math.sin(cycle - 0.56) * 0.11;
-      if (stride >= 0) {
-        plantWalkAnkle(rightLeg, plantedAnkles.right);
-      } else {
-        plantWalkAnkle(leftLeg, plantedAnkles.left);
-      }
+      applyCarryPose();
+      var cycle = phase + progress * TAU * 1.25;
+      var enterEnvelope = smooth(clamp01(progress / 0.1));
+      var exitEnvelope = smooth(clamp01((1 - progress) / 0.12));
+      var motionEnvelope = enterEnvelope * exitEnvelope;
+      var stride = Math.sin(cycle) * motionEnvelope;
+      var liftLeft = Math.max(0, Math.sin(cycle)) * motionEnvelope;
+      var liftRight = Math.max(0, -Math.sin(cycle)) * motionEnvelope;
+      pelvis.position.y += Math.abs(Math.sin(cycle * 2)) * 0.62 * motionEnvelope;
+      pelvis.rotation.y = -stride * 0.032;
+      spine.rotation.y = stride * 0.04;
+      spine.rotation.z = -stride * 0.014;
+      head.rotation.z = -stride * 0.03;
+      leftLeg.hip.rotation.z = stride * 0.24;
+      rightLeg.hip.rotation.z = -stride * 0.24;
+      leftLeg.knee.rotation.z = -liftLeft * 0.36;
+      rightLeg.knee.rotation.z = -liftRight * 0.36;
+      throwingArm.shoulder.rotation.z += -stride * 0.11;
+      bucketArm.shoulder.rotation.z += stride * 0.07;
+      throwingArm.elbow.rotation.z += -liftRight * 0.08;
+      bucketArm.elbow.rotation.z += liftLeft * 0.04;
+      bucketPose.rotation.z += -Math.sin(cycle - 1.25) * 0.075 * motionEnvelope;
+
+      var leftCorrection = walkAnkleCorrection(leftLeg, plantedAnkles.left);
+      var rightCorrection = walkAnkleCorrection(rightLeg, plantedAnkles.right);
+      var rightSupport = smooth(clamp01((stride + 0.2) / 0.4));
+      pelvis.position.x += leftCorrection.x * (1 - rightSupport) + rightCorrection.x * rightSupport;
+      pelvis.position.y += leftCorrection.y * (1 - rightSupport) + rightCorrection.y * rightSupport;
+      flattenFoot(leftLeg);
+      flattenFoot(rightLeg);
     }
 
     function poseDeployLadder(progress, phase) {
+      applyCarryPose();
       var t = smooth(progress);
-      var settle = Math.sin(progress * PI) * 0.025;
+      var anticipation = Math.sin(progress * PI);
       contactShadow.visible = false;
-      pelvis.position.y -= Math.sin(t * PI) * 2;
-      spine.rotation.z = -0.055 * t + settle;
-      throwingArm.shoulder.rotation.z = 0.92 * t;
-      throwingArm.elbow.rotation.z = -0.12 + 0.92 * t;
-      bucketArm.shoulder.rotation.z = -0.35 - 0.31 * t;
-      bucketArm.elbow.rotation.z = 0.42 - 1.05 * t;
-      leftLeg.hip.rotation.z = -0.11 * t;
-      rightLeg.hip.rotation.z = 0.14 * t;
-      leftLeg.knee.rotation.z = -0.18 * t;
+      pelvis.position.y -= anticipation * 1.55;
+      spine.rotation.z = -0.04 * t + anticipation * 0.025;
+      head.rotation.z = 0.025 * t - anticipation * 0.018;
+      throwingArm.shoulder.rotation.z = -0.08 + 1.08 * t;
+      throwingArm.elbow.rotation.z = -0.28 + 1.06 * t;
+      bucketArm.shoulder.rotation.z = 0.18 + 0.04 * t;
+      bucketArm.elbow.rotation.z = 0.34 + 0.08 * t;
+      leftLeg.hip.rotation.z = -0.1 * t;
+      rightLeg.hip.rotation.z = 0.12 * t;
+      leftLeg.knee.rotation.z = -0.2 * t;
       rightLeg.knee.rotation.z = -0.2 * t;
-      bucketPose.rotation.z = -0.06;
     }
 
     function poseClimbLadder(progress, cycles) {
       cycles = Math.max(2, Math.round(Number(cycles) || 2));
       var cycle = progress * TAU * cycles;
       var reach = Math.sin(cycle);
-      var entry = smooth(clamp01(progress / 0.16));
-      var throwingShoulderTarget = 2.72 + reach * 0.12;
-      var bucketShoulderTarget = -2.72 + reach * 0.12;
-      var throwingElbowTarget = 0.72 - reach * 0.16;
-      var bucketElbowTarget = -0.72 - reach * 0.16;
+      var travel = smooth(progress);
+      var motion = smooth(clamp01(progress / 0.14)) * smooth(clamp01((1 - progress) / 0.14));
       contactShadow.visible = false;
-      pelvis.position.y += Math.abs(Math.cos(cycle)) * 0.72;
-      pelvis.rotation.y = reach * 0.025;
-      spine.rotation.z = -reach * 0.024;
-      throwingArm.shoulder.rotation.z = 0.92 + (throwingShoulderTarget - 0.92) * entry;
-      bucketArm.shoulder.rotation.z = -0.66 + (bucketShoulderTarget + 0.66) * entry;
-      throwingArm.elbow.rotation.z = 0.8 + (throwingElbowTarget - 0.8) * entry;
-      bucketArm.elbow.rotation.z = -0.63 + (bucketElbowTarget + 0.63) * entry;
-      leftLeg.hip.rotation.z = -0.11 + (0.23 - reach * 0.2) * entry;
-      rightLeg.hip.rotation.z = 0.14 + (-0.26 - reach * 0.2) * entry;
-      leftLeg.knee.rotation.z = -0.18 + (-0.16 + Math.max(0, reach) * 0.16) * entry;
-      rightLeg.knee.rotation.z = -0.2 + (-0.14 + Math.max(0, -reach) * 0.16) * entry;
-      bucketPose.rotation.z = -0.06 + (0.06 - reach * 0.05) * entry;
+      pelvis.position.y += Math.abs(Math.cos(cycle)) * 0.42 * motion;
+      pelvis.rotation.y = reach * 0.018 * motion;
+      spine.rotation.z = -0.04 * (1 - travel) - reach * 0.022 * motion;
+      head.rotation.z = 0.025 * (1 - travel) - reach * 0.04 * motion;
+      throwingArm.shoulder.rotation.z = 1 + 1.45 * travel + reach * 0.07 * motion;
+      throwingArm.elbow.rotation.z = 0.78 + 0.12 * travel - reach * 0.08 * motion;
+      bucketArm.shoulder.rotation.z = 0.22 + 0.02 * travel + reach * 0.025 * motion;
+      bucketArm.elbow.rotation.z = 0.42 - 0.02 * travel - reach * 0.04 * motion;
+      leftLeg.hip.rotation.z = -0.1 + 0.18 * travel + reach * 0.16 * motion;
+      rightLeg.hip.rotation.z = 0.12 - 0.2 * travel - reach * 0.16 * motion;
+      leftLeg.knee.rotation.z = -0.2 - 0.06 * travel - (0.08 + Math.max(0, -reach) * 0.15) * motion;
+      rightLeg.knee.rotation.z = -0.2 - 0.06 * travel - (0.08 + Math.max(0, reach) * 0.15) * motion;
+      bucketPose.rotation.z = -0.08 - reach * 0.025 * motion;
     }
 
     function poseRetrieveLadder(progress) {
       var t = smooth(progress);
       contactShadow.visible = false;
-      pelvis.position.y -= Math.sin(t * PI) * 2.5;
-      spine.rotation.z = 0.12 * Math.sin(t * PI);
-      throwingArm.shoulder.rotation.z = 2.72 - 1.27 * t;
-      throwingArm.elbow.rotation.z = 0.72 - 0.25 * t;
-      bucketArm.shoulder.rotation.z = -2.72 + 1.52 * t;
-      bucketArm.elbow.rotation.z = -0.72 + 0.32 * t;
-      leftLeg.hip.rotation.z = 0.12 * (1 - t);
-      rightLeg.hip.rotation.z = -0.12 * (1 - t);
-      leftLeg.knee.rotation.z = -0.34 * (1 - t);
-      rightLeg.knee.rotation.z = -0.34 * (1 - t);
-      bucketPose.rotation.z = -0.03 * t;
+      pelvis.position.y -= Math.sin(t * PI) * 1.45;
+      spine.rotation.z = Math.sin(t * PI) * 0.07;
+      head.rotation.z = -Math.sin(t * PI) * 0.035;
+      throwingArm.shoulder.rotation.z = 2.45 + (-0.08 - 2.45) * t;
+      throwingArm.elbow.rotation.z = 0.9 + (-0.28 - 0.9) * t;
+      bucketArm.shoulder.rotation.z = 0.24 + (0.18 - 0.24) * t;
+      bucketArm.elbow.rotation.z = 0.4 + (0.34 - 0.4) * t;
+      leftLeg.hip.rotation.z = 0.08 * (1 - t);
+      rightLeg.hip.rotation.z = -0.08 * (1 - t);
+      leftLeg.knee.rotation.z = -0.26 * (1 - t);
+      rightLeg.knee.rotation.z = -0.26 * (1 - t);
+      bucketPose.rotation.z = -0.08;
     }
 
     function posePaintSwing(progress, phase) {
-      var entry = smooth(clamp01(progress / 0.18));
-      var arc = Math.sin(progress * PI);
-      var shoulderDepth = Math.sin(progress * PI * 2);
-      var startsFromWalk = phase >= 0.5;
-      var bucketShoulderStart = startsFromWalk ? 0 : -1.2;
-      var bucketElbowStart = startsFromWalk ? 0.15 : -0.4;
-      var bucketPoseStart = startsFromWalk ? 0.058 : -0.03;
-      var throwingShoulderStart = startsFromWalk ? 0 : 1.45;
-      var throwingElbowStart = startsFromWalk ? -0.12 : 0.47;
-      pelvis.rotation.y = -arc * 0.18 * entry;
-      spine.rotation.z = -arc * 0.22 * entry;
-      bucketArm.shoulder.rotation.z = bucketShoulderStart +
-        (-0.35 + arc * 1.65 - bucketShoulderStart) * entry;
-      bucketArm.shoulder.rotation.x = shoulderDepth * 0.38 * entry;
-      bucketArm.elbow.rotation.z = bucketElbowStart + (0.42 + arc * 0.6 - bucketElbowStart) * entry;
-      bucketArm.wrist.rotation.z = -arc * 0.48 * entry;
-      bucketPose.rotation.z = bucketPoseStart + (-arc * 0.7 - bucketPoseStart) * entry;
-      throwingArm.shoulder.rotation.z = throwingShoulderStart +
-        (-arc * 0.6 - throwingShoulderStart) * entry;
-      throwingArm.elbow.rotation.z = throwingElbowStart + (-0.12 - throwingElbowStart) * entry;
-      leftLeg.hip.rotation.z = -arc * 0.16 * entry;
-      rightLeg.hip.rotation.z = arc * 0.16 * entry;
+      applyCarryPose();
+      var gesture = Math.sin(smooth(progress) * PI);
+      var depth = Math.sin(progress * PI * 2);
+      pelvis.rotation.y = -gesture * 0.1;
+      spine.rotation.z = -gesture * 0.14;
+      head.rotation.z = gesture * 0.055 - depth * 0.012;
+      bucketArm.shoulder.rotation.z += gesture * 0.92;
+      bucketArm.shoulder.rotation.x = depth * 0.2;
+      bucketArm.elbow.rotation.z += gesture * 0.42;
+      bucketArm.wrist.rotation.z = -gesture * 0.34;
+      bucketPose.rotation.z += -gesture * 0.72;
+      throwingArm.shoulder.rotation.z += -gesture * 0.28;
+      throwingArm.elbow.rotation.z += gesture * 0.12;
+      leftLeg.hip.rotation.z = -gesture * 0.1;
+      rightLeg.hip.rotation.z = gesture * 0.1;
+      leftLeg.knee.rotation.z = -gesture * 0.08;
     }
 
     function poseRest(progress, phase) {
+      applyCarryPose();
       var settle = smooth(progress);
       var idle = Math.sin(phase + progress * TAU) * 0.025;
-      pelvis.position.y -= 2 * settle;
-      pelvis.rotation.z = -0.045 * settle;
-      spine.rotation.z = 0.08 * settle + idle;
-      throwingArm.shoulder.rotation.z = -0.14;
-      throwingArm.elbow.rotation.z = -0.18;
-      bucketArm.shoulder.rotation.z = 0.22;
-      bucketArm.elbow.rotation.z = 0.28;
-      bucketPose.rotation.z = -0.08;
-      leftLeg.knee.rotation.z = -0.08;
+      pelvis.position.y -= 1.2 * settle;
+      pelvis.rotation.z = -0.025 * settle;
+      spine.rotation.z = 0.045 * settle + idle;
+      head.rotation.z = -idle * 0.7;
+      leftLeg.knee.rotation.z = -0.06;
     }
 
     function poseVanish(progress) {
+      applyCarryPose();
       var t = smooth(progress);
-      pelvis.position.y -= 2 * t;
-      pelvis.rotation.z = -0.045 * t;
-      spine.rotation.z = 0.08 * t;
-      throwingArm.shoulder.rotation.z = -0.14 * t;
-      throwingArm.elbow.rotation.z = -0.12 - 0.06 * t;
-      bucketArm.shoulder.rotation.z = -0.35 + 0.57 * t;
-      bucketArm.elbow.rotation.z = 0.42 - 0.14 * t;
-      bucketPose.rotation.z = -0.08 * t;
-      leftLeg.knee.rotation.z = -0.08 * t;
+      var farewell = Math.sin(t * PI);
+      pelvis.position.y -= 1.2 * t;
+      pelvis.rotation.z = -0.025 * t;
+      spine.rotation.z = 0.045 * t;
+      head.rotation.z = -farewell * 0.04;
+      throwingArm.shoulder.rotation.z += farewell * 0.32;
+      throwingArm.elbow.rotation.z += farewell * 0.18;
     }
 
     function setPose(name, progress, phase) {
@@ -454,9 +470,9 @@
       if (disposed) return;
       delta = Number(delta);
       secondaryTime += Number.isFinite(delta) ? Math.max(0, Math.min(0.1, delta)) : 0;
-      var ladderDamping = currentPose.indexOf('ladder') === -1 ? 1 : 0.22;
-      bucketSway.rotation.z = Math.sin(secondaryTime * 2.4) * 0.055 * ladderDamping;
-      bucketSway.rotation.x = Math.cos(secondaryTime * 1.7) * 0.025 * ladderDamping;
+      var carryMotion = currentPose === 'walk' ? 1 : (currentPose === 'rest' ? 0.35 : 0);
+      bucketSway.rotation.z = Math.sin(secondaryTime * 2.15) * 0.018 * carryMotion;
+      bucketSway.rotation.x = Math.cos(secondaryTime * 1.55) * 0.008 * carryMotion;
       var breath = 1 + Math.sin(secondaryTime * 1.8) * 0.012;
       breathingJoint.scale.set(1 / breath, breath, 1);
     }

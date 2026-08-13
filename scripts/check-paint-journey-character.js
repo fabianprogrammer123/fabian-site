@@ -168,8 +168,14 @@ const canvasContext = {
   fillRect() {},
   beginPath() {},
   arc() {},
+  moveTo() {},
+  quadraticCurveTo() {},
+  stroke() {},
   fill() {},
-  set fillStyle(value) {}
+  set fillStyle(value) {},
+  set strokeStyle(value) {},
+  set lineWidth(value) {},
+  set lineCap(value) {}
 };
 const document = {
   createElement() {
@@ -286,14 +292,85 @@ function testFigureUsesCompactHumanProportions() {
   const { character } = createCharacter();
   const shoulder = character.root.getObjectByName('throwing-shoulder');
   const upperArm = character.root.getObjectByName('throwing-upper-arm');
+  const forearm = character.root.getObjectByName('throwing-forearm');
   const thigh = character.root.getObjectByName('left-thigh');
+  const shin = character.root.getObjectByName('left-shin');
+  const face = character.root.getObjectByName('dotted-face');
+  const shoulderCap = character.root.getObjectByName('throwing-shoulder-cap');
 
-  assert.ok(Math.abs(shoulder.position.x) <= 16,
-    'shoulders must sit closer to the torso instead of reading as a dangling stick rig');
-  assert.ok(upperArm.scale.y <= 25,
-    'arms must use a compact adult proportion');
-  assert.ok(thigh.scale.x >= 6.6,
-    'legs must have enough mass to read as a human figure');
+  assert.ok(Math.abs(shoulder.position.x) <= 14.5,
+    'cute shoulders must sit close to the torso instead of reading as a dangling stick rig');
+  assert.ok(upperArm.scale.y <= 22 && forearm.scale.y <= 20,
+    'both arm segments must use compact, rounded proportions');
+  assert.ok(thigh.scale.y <= 27 && shin.scale.y <= 25,
+    'leg segments must stay compact enough to avoid a marionette silhouette');
+  assert.ok(thigh.scale.x >= 7 && shin.scale.x >= 6.4,
+    'legs must have enough mass to read as a grounded human figure');
+  assert.ok(face.scale.x >= 12 && face.scale.y >= 12.5,
+    'the face must be slightly oversized to give the small painter a warm, cute silhouette');
+  assert.ok(shoulderCap.scale.x <= 6.4,
+    'joint caps must not overpower the shorter limbs');
+  assert.match(source, /quadraticCurveTo\(/,
+    'the face must use a small curved expression rather than a flat mechanical mouth');
+}
+
+function testSupportFootChangeUsesADoubleSupportBlend() {
+  const { character } = createCharacter();
+  const pelvis = character.root.getObjectByName('pelvis');
+
+  character.setPose('walk', 0.399, 0);
+  const before = pelvis.position.clone();
+  character.setPose('walk', 0.401, 0);
+  const after = pelvis.position.clone();
+
+  assert.ok(Math.hypot(after.x - before.x, after.y - before.y) < 0.8,
+    'support-foot changes must blend through double support without a lateral pelvis pop');
+}
+
+function testNaturalWalkHasQuietFollowThroughAndBentBucketArm() {
+  const { character } = createCharacter();
+  const pelvis = character.root.getObjectByName('pelvis');
+  const head = character.root.getObjectByName('head');
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+  const bucketElbow = character.root.getObjectByName('bucket-elbow');
+
+  character.setPose('walk', 0.2, 0);
+
+  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 0.2,
+    'walking arms must counter-swing gently rather than dangle');
+  assert.ok(Math.abs(bucketElbow.rotation.z) >= 0.26,
+    'the bucket arm must stay visibly bent while carrying paint');
+  assert.ok(Math.abs(head.rotation.z) >= 0.006 && Math.abs(head.rotation.z) <= 0.08,
+    'the head must add a quiet delayed follow-through instead of remaining mechanically fixed');
+  assert.ok(pelvis.position.y <= 62,
+    'the shorter figure must keep a low, grounded centre of mass');
+}
+
+function testLadderClimbUsesOneHandAndKeepsTheBucketTucked() {
+  const { character } = createCharacter();
+  const throwingShoulder = character.root.getObjectByName('throwing-shoulder');
+  const throwingElbow = character.root.getObjectByName('throwing-elbow');
+  const bucketShoulder = character.root.getObjectByName('bucket-shoulder');
+  const bucketElbow = character.root.getObjectByName('bucket-elbow');
+  const leftHip = character.root.getObjectByName('left-hip');
+  const rightHip = character.root.getObjectByName('right-hip');
+  const leftKnee = character.root.getObjectByName('left-knee');
+  const rightKnee = character.root.getObjectByName('right-knee');
+
+  character.setPose('climb-ladder', 0.35, 5);
+
+  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 2.55,
+    'the gripping arm must reach a rung without a full overhead marionette extension');
+  assert.ok(Math.abs(throwingElbow.rotation.z) >= 0.7,
+    'the gripping arm must remain visibly bent');
+  assert.ok(Math.abs(bucketShoulder.rotation.z) <= 0.4,
+    'the bucket shoulder must remain tucked beside the torso while climbing');
+  assert.ok(Math.abs(bucketElbow.rotation.z) >= 0.28 && Math.abs(bucketElbow.rotation.z) <= 0.62,
+    'the bucket elbow must brace the load close to the body');
+  assert.ok(Math.sign(leftHip.rotation.z) !== Math.sign(rightHip.rotation.z),
+    'climbing legs must alternate instead of swinging together');
+  assert.ok(leftKnee.rotation.z < -0.08 && rightKnee.rotation.z < -0.08,
+    'both knees must retain believable flex on the ladder');
 }
 
 function testWalkAndLadderClimbStayControlled() {
@@ -429,6 +506,9 @@ testLightsStayInsideCharacterRig();
 testBucketPaintSurfaceTracksSpectrumHue();
 testPaintLeavesFromTheBucketEdge();
 testFigureUsesCompactHumanProportions();
+testSupportFootChangeUsesADoubleSupportBlend();
+testNaturalWalkHasQuietFollowThroughAndBentBucketArm();
+testLadderClimbUsesOneHandAndKeepsTheBucketTucked();
 testWalkAndLadderClimbStayControlled();
 testLadderPoseTransitionsStayContinuous();
 testRetrievalBlendsIntoPaintSwing();

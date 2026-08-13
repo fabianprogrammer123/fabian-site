@@ -150,6 +150,16 @@
       background: #fff;
     }
     .paint-finale.is-live { background: transparent; }
+    .paint-finale__canvas,
+    .finale-walker {
+      opacity: 0;
+      visibility: hidden;
+    }
+    .paint-finale.is-enhanced .paint-finale__canvas,
+    .paint-finale.is-enhanced .finale-walker {
+      opacity: 1;
+      visibility: visible;
+    }
     .paint-finale__canvas {
       position: absolute;
       inset: 0;

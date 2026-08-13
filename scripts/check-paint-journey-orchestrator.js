@@ -14,12 +14,12 @@ function requirePattern(pattern, message) {
   assert.match(source, pattern, message);
 }
 
-requirePattern(/entering:\s*1\.25/,
+requirePattern(/entering:\s*1\.35/,
   'the opening walk must use a readable human pace');
 requirePattern(/currentPoint\.x\s*=\s*start\.x\s*\+\s*96/,
   'the opening walk distance must stay proportionate to the compact figure');
-requirePattern(/setPose\('walk',\s*progress,\s*progress\s*\*\s*Math\.PI\s*\*\s*4\)/,
-  'the opening travel must use enough short strides to avoid a single sliding step');
+requirePattern(/setPose\('walk',\s*progress,\s*0\)/,
+  'the character rig must own one deliberate gait clock instead of double-counting walk progress');
 
 requirePattern(/function\s+portraitPoint\s*\(/,
   'portrait must use a dedicated element-derived waypoint');
@@ -45,8 +45,8 @@ requirePattern(/function\s+finishLoop\s*\([^)]*\)\s*\{[\s\S]{0,420}trail\.freeze
   'completed or cancelled journeys must stop persistent trail maintenance');
 requirePattern(/function\s+failLive\s*\([^)]*\)\s*\{[\s\S]{0,360}trail\.freeze\(\)/,
   'a failed WebGL journey must stop trail maintenance before falling back');
-requirePattern(/if\s*\(reducedMotion\)[\s\S]{0,260}drawStaticSpectrum\(waypoints\)[\s\S]{0,160}trail\.freeze\(\)/,
-  'the reduced-motion artwork must become inert after it is drawn');
+requirePattern(/function\s+beginLoading[\s\S]{0,900}if\s*\(reducedMotion\)[\s\S]{0,260}drawStaticSpectrum\(waypoints\)[\s\S]{0,160}trail\.freeze\(\)/,
+  'reduced-motion artwork must be created inside the shared bottom-trigger path and become inert');
 requirePattern(/function\s+handleVisibilityChange\s*\([^)]*\)\s*\{[\s\S]{0,520}stateStarted\s*\+=\s*now\s*-\s*hiddenAt/,
   'returning to a hidden tab must preserve the current animation phase');
 requirePattern(/document\.addEventListener\('visibilitychange',\s*handleVisibilityChange\)/,
@@ -95,10 +95,14 @@ requirePattern(/createLadder/,
   'the live journey must construct a 3D ladder');
 requirePattern(/ladderReach\s*=\s*\(window\.innerWidth\s*<=\s*520\s*\?\s*82\s*:\s*110\)/,
   'the ladder rails must extend beyond the climbing hands');
-requirePattern(/climbCycles\s*=\s*clamp\([\s\S]{0,180}rungSpacing[\s\S]{0,120},\s*2,\s*24\)/,
-  'climb cadence must scale across long ladder spans instead of capping at six cycles');
-requirePattern(/character\.setPose\('climb-ladder',\s*eased,\s*climbCycles\)/,
-  'climbing limbs and root travel must use the same eased step clock');
+requirePattern(/climbCycles\s*=\s*clamp\([\s\S]{0,220}rungSpacing\s*\*\s*5[\s\S]{0,120},\s*2,\s*9\)/,
+  'climb cadence must stay measured even across long ladder spans');
+requirePattern(/climbDuration\s*=\s*clamp\(climbCycles\s*\*\s*0\.62,\s*1\.8,\s*5\.6\)/,
+  'climb duration must grow with the number of deliberate rung contacts');
+requirePattern(/character\.setPose\('climb-ladder',\s*progress,\s*climbCycles\)/,
+  'climbing limbs must use a steady raw clock while root travel eases spatially');
+requirePattern(/var\s+climbProgressBeforeLayout[\s\S]{0,5000}stateStarted\s*=\s*layoutTimestamp\s*-\s*climbProgressBeforeLayout\s*\*\s*climbDuration\s*\*\s*1000/,
+  'a responsive cadence reflow must preserve normalized climb time instead of snapping the figure');
 requirePattern(/deploy-ladder[\s\S]{0,1200}climb-ladder[\s\S]{0,1200}retrieve-ladder/,
   'the state machine must deploy, climb, and retrieve the ladder');
 requirePattern(/climbCycles\s*=\s*clamp\([\s\S]{0,180}rungSpacing/,
@@ -113,12 +117,20 @@ requirePattern(/trail\.impact\(/,
   'each landing must create a pooled paint impact');
 requirePattern(/trail\.veil\(/,
   'each landing must cast a broad translucent paint veil across the site');
+requirePattern(/trail\.flow\(\{[\s\S]{0,380}width:\s*flowWidth/,
+  'each landing must pour a layered fluid current broadly through the page background');
+requirePattern(/flowWidth\s*=\s*clamp\(canvasWidth\s*\*\s*0\.24,\s*110,\s*340\)/,
+  'fluid background coverage must scale from mobile to a broad desktop current');
+requirePattern(/previousFlowPoint\.ready[\s\S]{0,500}trail\.flow\(/,
+  'climb drips must join successive bucket positions into one continuous vertical pigment route');
 requirePattern(/landingSequence\s*\*\s*83/,
   'successive landings must rotate through materially different pigment families');
+requirePattern(/landingHue\s*\+\s*landingPaintStep\s*\*\s*2\.5/,
+  'one local fluid gesture must remain inside a cohesive neighboring pigment family');
 requirePattern(/landingMode\s*=\s*landingSequence\s*%\s*5/,
   'the six landings must rotate through at least five distinct gesture signatures');
-requirePattern(/LANDING_SEGMENTS\s*=\s*6/,
-  'broad page paint must grow out from the bucket in progressive segments');
+requirePattern(/LANDING_SEGMENTS\s*=\s*18/,
+  'broad page paint must flow from the bucket in a smooth, finely segmented reveal');
 requirePattern(/while\s*\(landingPaintStep\s*<\s*visibleStep\)/,
   'a landing must accumulate its broad gesture instead of appearing all at once');
 requirePattern(/landingMode\s*===\s*1[\s\S]{0,500}trail\.spray\(/,
@@ -231,7 +243,126 @@ async function testEscapeDuringModuleLoadingUsesAStaticFallback() {
     'a late import failure must not downgrade an Escape cancellation into an animated fallback');
 }
 
+function createBottomTriggerHarness({ reduced = false } = {}) {
+  const listeners = new Map();
+  let createTrailCalls = 0;
+  let loadThreeCalls = 0;
+  let drawStaticCalls = 0;
+  let freezeCalls = 0;
+  let fallbackOptions = null;
+  const stage = {
+    classList: { toggle() {} },
+    querySelector() { return null; },
+    setAttribute() {},
+    getBoundingClientRect() { return { top: 1900, height: 100 }; }
+  };
+  const liveCanvas = { removeEventListener() {} };
+  const fallbackCanvas = { style: {} };
+  const trailCanvas = {};
+  const level = { getBoundingClientRect() { return { top: 200, height: 100 }; } };
+  const document = {
+    documentElement: { scrollWidth: 1000, scrollHeight: 2000, clientWidth: 1000 },
+    body: { scrollWidth: 1000, scrollHeight: 2000 },
+    hidden: false,
+    getElementById(id) {
+      return {
+        'paint-finale': stage,
+        'paint-finale-canvas': fallbackCanvas,
+        'journey-webgl-layer': liveCanvas,
+        'journey-paint-layer': trailCanvas
+      }[id] || null;
+    },
+    querySelector() { return level; },
+    addEventListener() {},
+    removeEventListener() {}
+  };
+  const trail = {
+    drawStaticSpectrum() { drawStaticCalls += 1; },
+    freeze() { freezeCalls += 1; }
+  };
+  const window = {
+    PaintJourney: {
+      createTrail() { createTrailCalls += 1; return trail; },
+      loadThree() { loadThreeCalls += 1; return new Promise(() => {}); }
+    },
+    PaintFinale: { startFallback(options) { fallbackOptions = options; } },
+    innerWidth: 1000,
+    innerHeight: 600,
+    scrollX: 0,
+    pageXOffset: 0,
+    scrollY: 1397,
+    pageYOffset: 1397,
+    performance: { now() { return 100; } },
+    matchMedia() { return { matches: reduced }; },
+    addEventListener(type, callback) {
+      const callbacks = listeners.get(type) || [];
+      callbacks.push(callback);
+      listeners.set(type, callbacks);
+    },
+    removeEventListener(type, callback) {
+      const callbacks = listeners.get(type) || [];
+      listeners.set(type, callbacks.filter((listener) => listener !== callback));
+    },
+    IntersectionObserver: function IntersectionObserver(callback) {
+      this.observe = function observe() { callback([{ isIntersecting: true }]); };
+      this.disconnect = function disconnect() {};
+    }
+  };
+  vm.runInNewContext(source, { window, document });
+  return {
+    window,
+    document,
+    setHeight(height) {
+      document.documentElement.scrollHeight = height;
+      document.body.scrollHeight = height;
+    },
+    setScroll(y) {
+      window.scrollY = y;
+      window.pageYOffset = y;
+    },
+    fire(type) {
+      for (const callback of listeners.get(type) || []) callback({ type });
+    },
+    counts() { return { createTrailCalls, loadThreeCalls, drawStaticCalls, freezeCalls, fallbackOptions }; }
+  };
+}
+
+function testExactBottomLazilyStartsAnimatedAndReducedMotionPaths() {
+  for (const reduced of [false, true]) {
+    const harness = createBottomTriggerHarness({ reduced });
+    assert.deepEqual(harness.counts(), {
+      createTrailCalls: 0,
+      loadThreeCalls: 0,
+      drawStaticCalls: 0,
+      freezeCalls: 0,
+      fallbackOptions: null
+    }, 'finale visibility alone and a position three pixels above bottom must remain completely idle');
+
+    harness.setHeight(2100);
+    harness.setScroll(1398);
+    harness.fire('scroll');
+    assert.equal(harness.counts().createTrailCalls, 0,
+      'the bottom boundary must use the current document height instead of a stale maximum scroll');
+
+    harness.setScroll(1498);
+    harness.fire('scroll');
+    harness.fire('scroll');
+    const counts = harness.counts();
+    assert.equal(counts.createTrailCalls, 1, 'reaching the two-pixel bottom tolerance must initialize once');
+    if (reduced) {
+      assert.equal(counts.loadThreeCalls, 0, 'reduced motion must never load the 3D runtime');
+      assert.equal(counts.drawStaticCalls, 1, 'reduced motion must draw its rich static field only at bottom');
+      assert.equal(counts.freezeCalls, 1, 'the reduced-motion field must become inert immediately');
+      assert.equal(counts.fallbackOptions && counts.fallbackOptions.staticOnly, true,
+        'reduced motion must request only a static finale at the shared bottom trigger');
+    } else {
+      assert.equal(counts.loadThreeCalls, 1, 'normal motion must start one Three.js load at bottom');
+    }
+  }
+}
+
 (async function runBehaviorChecks() {
+  testExactBottomLazilyStartsAnimatedAndReducedMotionPaths();
   await testEscapeDuringModuleLoadingUsesAStaticFallback();
   console.log('PASS: paint journey orchestrator contract');
 }()).catch((error) => {

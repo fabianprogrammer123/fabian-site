@@ -5,16 +5,17 @@
   var DEFAULT_CONTENT_SELECTORS = ['.voice-bubble', '.finale-footer'];
   var EXCLUSION_PADDING = 14;
   var PIGMENT_STOPS = [
-    [0, 207, 48, 49],
-    [32, 226, 91, 39],
-    [62, 222, 174, 40],
-    [105, 76, 143, 72],
-    [150, 28, 133, 105],
-    [194, 27, 132, 164],
-    [226, 47, 72, 166],
-    [270, 99, 57, 139],
-    [318, 180, 47, 101],
-    [360, 207, 48, 49]
+    [0, 211, 36, 44],
+    [28, 235, 73, 28],
+    [58, 225, 164, 25],
+    [103, 61, 139, 61],
+    [148, 0, 135, 104],
+    [188, 0, 126, 153],
+    [224, 28, 80, 190],
+    [264, 64, 48, 164],
+    [306, 126, 43, 151],
+    [334, 194, 34, 103],
+    [360, 211, 36, 44]
   ];
 
   function pigmentRgb(value) {
@@ -538,6 +539,121 @@
       });
     }
 
+    function fluidPoint(points, progress) {
+      var inverse = 1 - progress;
+      return {
+        x: inverse * inverse * inverse * points[0].x +
+          3 * inverse * inverse * progress * points[1].x +
+          3 * inverse * progress * progress * points[2].x +
+          progress * progress * progress * points[3].x,
+        y: inverse * inverse * inverse * points[0].y +
+          3 * inverse * inverse * progress * points[1].y +
+          3 * inverse * progress * progress * points[2].y +
+          progress * progress * progress * points[3].y
+      };
+    }
+
+    function partialFluidCurve(points, progress) {
+      function blend(from, to, amount) {
+        return {
+          x: from.x + (to.x - from.x) * amount,
+          y: from.y + (to.y - from.y) * amount
+        };
+      }
+      var a = blend(points[0], points[1], progress);
+      var b = blend(points[1], points[2], progress);
+      var c = blend(points[2], points[3], progress);
+      var d = blend(a, b, progress);
+      var e = blend(b, c, progress);
+      return [points[0], a, d, blend(d, e, progress)];
+    }
+
+    function flow(options) {
+      if (destroyed) return;
+      options = options || {};
+      var from = options.from;
+      var to = options.to;
+      if (!from || !to || !Number.isFinite(from.x) || !Number.isFinite(from.y) ||
+          !Number.isFinite(to.x) || !Number.isFinite(to.y)) return;
+      var progress = Math.max(0, Math.min(1, options.progress === undefined ? 1 : Number(options.progress)));
+      if (!progress) return;
+
+      var fromX = from.x - originX;
+      var fromY = from.y - originY;
+      var toX = to.x - originX;
+      var toY = to.y - originY;
+      var deltaX = toX - fromX;
+      var deltaY = toY - fromY;
+      var distance = Math.max(1, Math.hypot(deltaX, deltaY));
+      var normalX = -deltaY / distance;
+      var normalY = deltaX / distance;
+      var currentWidth = Math.max(18, Math.min(360, Number(options.width) || 180));
+      var hue = Number.isFinite(Number(options.hue)) ? Number(options.hue) : 0;
+      var alpha = Math.max(0.12, Math.min(1, options.alpha === undefined ? 0.86 : Number(options.alpha)));
+      var seedBase = Number.isFinite(Number(options.seed)) ? Number(options.seed) : pointSeed(from, hue + to.y);
+      var bend = (seeded(seedBase + 3.7) - 0.5) * Math.min(currentWidth * 0.72, distance * 0.2);
+      var points = [
+        { x: fromX, y: fromY },
+        { x: fromX + deltaX * 0.28 + normalX * bend, y: fromY + deltaY * 0.28 + normalY * bend },
+        { x: fromX + deltaX * 0.7 - normalX * bend * 0.64, y: fromY + deltaY * 0.7 - normalY * bend * 0.64 },
+        { x: toX, y: toY }
+      ];
+      var revealed = partialFluidCurve(points, progress);
+
+      function strokeLayer(layerWidth, layerHue, layerAlpha, lift, composite, offset) {
+        context.globalCompositeOperation = composite;
+        context.globalAlpha = 1;
+        context.strokeStyle = rgba(layerHue, layerAlpha, lift);
+        context.lineWidth = Math.max(1.5, layerWidth);
+        context.beginPath();
+        context.moveTo(revealed[0].x + normalX * offset, revealed[0].y + normalY * offset);
+        context.bezierCurveTo(
+          revealed[1].x + normalX * offset,
+          revealed[1].y + normalY * offset,
+          revealed[2].x + normalX * offset,
+          revealed[2].y + normalY * offset,
+          revealed[3].x + normalX * offset,
+          revealed[3].y + normalY * offset
+        );
+        context.stroke();
+      }
+
+      withContentProtection(function () {
+        context.save();
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+
+        strokeLayer(currentWidth * 1.04, hue + 18, alpha * 0.22, 0.27, 'source-over', 0);
+        strokeLayer(currentWidth * 0.7, hue, alpha * 0.76, 0.02, 'multiply', 0);
+        strokeLayer(currentWidth * 0.105, hue - 11, alpha * 0.7, -0.22, 'multiply', currentWidth * 0.25);
+        strokeLayer(currentWidth * 0.075, hue + 8, alpha * 0.56, -0.1, 'multiply', -currentWidth * 0.28);
+        strokeLayer(Math.max(2, currentWidth * 0.045), hue + 15, alpha * 0.34, 0.72, 'screen', -currentWidth * 0.12);
+
+        var eddyCount = Math.max(3, Math.min(8, Math.round(3 + currentWidth / 70)));
+        context.globalCompositeOperation = 'multiply';
+        for (var eddy = 0; eddy < eddyCount; eddy += 1) {
+          var eddySeed = seedBase + eddy * 13.71;
+          var eddyProgress = progress * (0.13 + (eddy + 0.5) / (eddyCount + 1) * 0.8);
+          var center = fluidPoint(points, eddyProgress);
+          var side = (seeded(eddySeed) - 0.5) * currentWidth * 0.82;
+          var eddyRadius = currentWidth * (0.018 + seeded(eddySeed + 4) * 0.035);
+          context.fillStyle = rgba(hue + (seeded(eddySeed + 7) - 0.5) * 34, alpha * 0.46, -0.06);
+          context.beginPath();
+          context.ellipse(
+            center.x + normalX * side,
+            center.y + normalY * side + eddyRadius * 0.34,
+            eddyRadius * (1.25 + seeded(eddySeed + 9)),
+            Math.max(1.4, eddyRadius * 0.62),
+            Math.atan2(deltaY, deltaX) + seeded(eddySeed + 12) * 0.4,
+            0,
+            Math.PI * 2
+          );
+          context.fill();
+        }
+        context.restore();
+      });
+    }
+
     function edgeLanePoint(point, index) {
       var size = documentSize();
       var x = index % 2 ? size.width - 28 : 28;
@@ -555,25 +671,36 @@
     }
 
     function drawStaticSpectrum(waypoints) {
-      if (destroyed || !Array.isArray(waypoints) || waypoints.length < 2) return;
+      if (destroyed || !Array.isArray(waypoints) || !waypoints.length) return;
+      var size = documentSize();
       var lanePoints = [];
       for (var index = 0; index < waypoints.length; index += 1) {
-        if (Number.isFinite(waypoints[index].y)) lanePoints.push(edgeLanePoint(waypoints[index], index));
+        if (Number.isFinite(waypoints[index].y)) lanePoints.push(edgeLanePoint(waypoints[index], 1));
       }
-      var segmentCount = lanePoints.length - 1;
-      var hueSteps = 12;
-      for (var segment = 1; segment < lanePoints.length; segment += 1) {
-        var from = lanePoints[segment - 1];
-        var to = lanePoints[segment];
-        for (var step = 0; step < hueSteps; step += 1) {
-          var start = step / hueSteps;
-          var end = (step + 1) / hueSteps;
-          ribbon({
-            from: { x: from.x + (to.x - from.x) * start, y: from.y + (to.y - from.y) * start },
-            to: { x: from.x + (to.x - from.x) * end, y: from.y + (to.y - from.y) * end },
-            hue: 360 * ((segment - 1 + start) / segmentCount),
-            width: 18,
-            alpha: 0.42
+      var bandWidth = Math.max(110, Math.min(340, size.width * 0.24));
+      var connectorWidth = Math.max(52, Math.min(128, size.width * 0.09));
+      for (var band = 0; band < lanePoints.length; band += 1) {
+        var from = lanePoints[band];
+        var hue = 360 * (band / Math.max(1, lanePoints.length));
+        flow({
+          from: { x: size.width + 12, y: from.y },
+          to: {
+            x: size.width * (band % 2 ? 0.07 : 0.13),
+            y: from.y + (band % 2 ? -1 : 1) * Math.min(68, bandWidth * 0.24)
+          },
+          hue: hue,
+          width: bandWidth,
+          progress: 1,
+          seed: band + 19
+        });
+        if (band > 0) {
+          flow({
+            from: lanePoints[band - 1],
+            to: from,
+            hue: hue - 28,
+            width: connectorWidth,
+            progress: 1,
+            seed: band + 101
           });
         }
       }
@@ -717,6 +844,7 @@
       whorl: whorl,
       impact: impact,
       veil: veil,
+      flow: flow,
       drawStaticSpectrum: drawStaticSpectrum,
       freeze: freeze,
       destroy: destroy

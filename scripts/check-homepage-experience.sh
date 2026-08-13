@@ -93,6 +93,8 @@ done
 
 test -f "$finale" || fail "missing assets/paint-finale.js"
 
+node "$root/scripts/check-paint-finale-activation.js"
+
 for text in \
   'IntersectionObserver' \
   'requestAnimationFrame' \
