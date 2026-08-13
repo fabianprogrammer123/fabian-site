@@ -16,6 +16,7 @@
     var disposed = false;
     var secondaryTime = 0;
     var currentPose = 'rest';
+    var currentPourAmount = 0;
     var reusable = {
       capsule: THREE.CapsuleGeometry
         ? new THREE.CapsuleGeometry(5, 16, 3, 8)
@@ -26,16 +27,13 @@
     };
     var charcoal = new THREE.MeshStandardMaterial({
       color: 0x242628,
-      roughness: 0.82,
-      metalness: 0.03,
-      flatShading: true
+      roughness: 0.9,
+      metalness: 0.015
     });
-    var offWhite = new THREE.MeshPhysicalMaterial({
+    var offWhite = new THREE.MeshStandardMaterial({
       color: 0xf1ede3,
-      roughness: 0.76,
-      metalness: 0,
-      clearcoat: 0.04,
-      flatShading: true
+      roughness: 0.88,
+      metalness: 0
     });
     var shadowMaterial = new THREE.MeshStandardMaterial({
       color: 0x151719,
@@ -121,7 +119,13 @@
     }
 
     function limb(name, parent, length, radius, material) {
-      return mesh(name, reusable.cylinder, material, parent, 0, -length / 2, 0, radius, length, radius);
+      var geometry = THREE.CapsuleGeometry
+        ? new THREE.CapsuleGeometry(radius, Math.max(1, length - radius * 2), 4, 10)
+        : new THREE.CylinderGeometry(radius, radius, length, 10);
+      var shape = mesh(name, geometry, material, parent, 0, -length / 2, 0);
+      shape.segmentLength = length;
+      shape.segmentRadius = radius;
+      return shape;
     }
 
     var root = joint('paint-climber-root');
@@ -148,39 +152,40 @@
     contactShadow.castShadow = false;
     contactShadow.receiveShadow = false;
 
-    var pelvis = joint('pelvis', root, 0, 56, 0);
-    mesh('pelvis-shell', reusable.sphere, charcoal, pelvis, 0, 0, 0, 12.8, 9.8, 8.8);
+    var pelvis = joint('pelvis', root, 0, 50, 0);
+    mesh('pelvis-shell', reusable.sphere, charcoal, pelvis, 0, 0, 0, 11.6, 8.8, 8.4);
 
-    var spine = joint('spine', pelvis, 0, 5, 0);
+    var spine = joint('spine', pelvis, 0, 4, 0);
     var breathingJoint = joint('breathing-joint', spine);
-    mesh('torso', reusable.capsule, charcoal, breathingJoint, 0, 18, 0, 2.08, 1.34, 1.34);
-    var neck = joint('neck', spine, 0, 39, 0);
-    mesh('neck-form', reusable.cylinder, offWhite, neck, 0, 3.5, 0, 5, 7, 5);
-    var head = joint('head', neck, 0, 11, 0);
-    mesh('dotted-face', reusable.sphere, faceMaterial, head, 0, 0, 0, 12.5, 13.2, 10.8);
-    mesh('cap', reusable.sphere, charcoal, head, 0, 7.9, 0, 12.8, 5.4, 11.1);
+    mesh('torso', reusable.capsule, charcoal, breathingJoint, 0, 16, 0, 1.95, 0.95, 1.25);
+    mesh('apron', reusable.sphere, offWhite, breathingJoint, 0, 14, 6.7, 8.7, 11.8, 1.7);
+    var neck = joint('neck', spine, 0, 32, 0);
+    mesh('neck-form', reusable.cylinder, offWhite, neck, 0, 3.2, 0, 4.8, 6.4, 4.8);
+    var head = joint('head', neck, 0, 10, 0);
+    mesh('dotted-face', reusable.sphere, faceMaterial, head, 0, 0, 0, 15, 16, 13);
+    mesh('cap', reusable.sphere, charcoal, head, 0, 9.4, 0, 15.3, 5.8, 13.3);
 
     function buildArm(side, name) {
-      var shoulder = joint(name + '-shoulder', spine, side * 14, 32, 0);
-      mesh(name + '-shoulder-cap', reusable.sphere, charcoal, shoulder, 0, 0, 0, 6.2, 6.2, 5.9);
-      limb(name + '-upper-arm', shoulder, 21, 6.1, charcoal);
-      var elbow = joint(name + '-elbow', shoulder, 0, -21, 0);
-      mesh(name + '-elbow-cap', reusable.sphere, offWhite, elbow, 0, 0, 0, 5.4, 5.4, 5.1);
-      limb(name + '-forearm', elbow, 19, 5.6, offWhite);
-      var wrist = joint(name + '-wrist', elbow, 0, -19, 0);
-      mesh(name + '-hand', reusable.sphere, offWhite, wrist, 0, -2.5, 0, 5.9, 6.2, 5.1);
+      var shoulder = joint(name + '-shoulder', spine, side * 12.5, 27, 0);
+      mesh(name + '-shoulder-cap', reusable.sphere, charcoal, shoulder, 0, 0, 0, 5.5, 5.5, 5.2);
+      limb(name + '-upper-arm', shoulder, 17, 5.2, charcoal);
+      var elbow = joint(name + '-elbow', shoulder, 0, -17, 0);
+      mesh(name + '-elbow-cap', reusable.sphere, charcoal, elbow, 0, 0, 0, 4.9, 4.9, 4.7);
+      limb(name + '-forearm', elbow, 15, 4.8, charcoal);
+      var wrist = joint(name + '-wrist', elbow, 0, -15, 0);
+      mesh(name + '-hand', reusable.sphere, offWhite, wrist, 0, -2.2, 0, 6.6, 6.9, 5.6);
       return { shoulder: shoulder, elbow: elbow, wrist: wrist };
     }
 
     function buildLeg(side, name) {
-      var hip = joint(name + '-hip', pelvis, side * 7.2, -3, 0);
-      mesh(name + '-hip-cap', reusable.sphere, charcoal, hip, 0, 0, 0, 7, 7, 6.4);
-      limb(name + '-thigh', hip, 26, 7.4, charcoal);
-      var knee = joint(name + '-knee', hip, 0, -26, 0);
-      mesh(name + '-knee-cap', reusable.sphere, offWhite, knee, 0, 0, 0, 6.2, 5.9, 5.8);
-      limb(name + '-shin', knee, 24, 6.5, offWhite);
-      var ankle = joint(name + '-ankle', knee, 0, -24, 0);
-      mesh(name + '-shoe', reusable.box, charcoal, ankle, side * 1.1, -3, 4, 8, 5.2, 12.4);
+      var hip = joint(name + '-hip', pelvis, side * 6.7, -3, 0);
+      mesh(name + '-hip-cap', reusable.sphere, charcoal, hip, 0, 0, 0, 6.5, 6.5, 6.1);
+      limb(name + '-thigh', hip, 22, 6.7, charcoal);
+      var knee = joint(name + '-knee', hip, 0, -22, 0);
+      mesh(name + '-knee-cap', reusable.sphere, charcoal, knee, 0, 0, 0, 5.8, 5.8, 5.5);
+      limb(name + '-shin', knee, 20, 5.9, charcoal);
+      var ankle = joint(name + '-ankle', knee, 0, -20, 0);
+      mesh(name + '-shoe', reusable.box, charcoal, ankle, side * 1, -3, 4, 7.7, 5.2, 11.6);
       return { hip: hip, knee: knee, ankle: ankle };
     }
 
@@ -190,9 +195,9 @@
     var rightLeg = buildLeg(1, 'right');
     var throwingHand = throwingArm.wrist;
 
-    var bucketPose = joint('bucket-pose', bucketArm.wrist, 1, -4, 0);
+    var bucketPose = joint('bucket-pose', bucketArm.wrist, 1, -3, 0);
     var bucketSway = joint('bucket-sway', bucketPose);
-    var bucket = joint('bucket', bucketSway, 3, -14, 0);
+    var bucket = joint('bucket', bucketSway, 3, -12, 0);
     mesh('bucket-body', new THREE.CylinderGeometry(8.8, 7.2, 18, 12, 1, false), offWhite, bucket, 0, 0, 0);
     mesh('bucket-interior', new THREE.CylinderGeometry(8, 8, 1, 16), bucketInteriorMaterial, bucket, 0, 8.55, 0);
     var paintSurface = mesh('paint-surface', new THREE.CylinderGeometry(7.2, 7.2, 0.75, 20), paintMaterial, bucket, 0, 9.08, 0);
@@ -292,9 +297,9 @@
 
     function applyCarryPose() {
       throwingArm.shoulder.rotation.z = -0.08;
-      throwingArm.elbow.rotation.z = -0.28;
-      bucketArm.shoulder.rotation.z = 0.18;
-      bucketArm.elbow.rotation.z = 0.34;
+      throwingArm.elbow.rotation.z = -0.24;
+      bucketArm.shoulder.rotation.z = 0.14;
+      bucketArm.elbow.rotation.z = 0.38;
       bucketPose.rotation.z = -0.08;
     }
 
@@ -307,20 +312,20 @@
       var stride = Math.sin(cycle) * motionEnvelope;
       var liftLeft = Math.max(0, Math.sin(cycle)) * motionEnvelope;
       var liftRight = Math.max(0, -Math.sin(cycle)) * motionEnvelope;
-      pelvis.position.y += Math.abs(Math.sin(cycle * 2)) * 0.62 * motionEnvelope;
-      pelvis.rotation.y = -stride * 0.032;
-      spine.rotation.y = stride * 0.04;
-      spine.rotation.z = -stride * 0.014;
-      head.rotation.z = -stride * 0.03;
-      leftLeg.hip.rotation.z = stride * 0.24;
-      rightLeg.hip.rotation.z = -stride * 0.24;
-      leftLeg.knee.rotation.z = -liftLeft * 0.36;
-      rightLeg.knee.rotation.z = -liftRight * 0.36;
+      pelvis.position.y += Math.abs(Math.sin(cycle * 2)) * 1.02 * motionEnvelope;
+      pelvis.rotation.y = -stride * 0.03;
+      spine.rotation.y = stride * 0.038;
+      spine.rotation.z = -stride * 0.016;
+      head.rotation.z = -stride * 0.045;
+      leftLeg.hip.rotation.z = stride * 0.29;
+      rightLeg.hip.rotation.z = -stride * 0.29;
+      leftLeg.knee.rotation.z = -liftLeft * 0.4;
+      rightLeg.knee.rotation.z = -liftRight * 0.4;
       throwingArm.shoulder.rotation.z += -stride * 0.11;
       bucketArm.shoulder.rotation.z += stride * 0.07;
       throwingArm.elbow.rotation.z += -liftRight * 0.08;
       bucketArm.elbow.rotation.z += liftLeft * 0.04;
-      bucketPose.rotation.z += -Math.sin(cycle - 1.25) * 0.075 * motionEnvelope;
+      bucketPose.rotation.z += -Math.sin(cycle - 1.25) * 0.07 * motionEnvelope;
 
       var leftCorrection = walkAnkleCorrection(leftLeg, plantedAnkles.left);
       var rightCorrection = walkAnkleCorrection(rightLeg, plantedAnkles.right);
@@ -336,75 +341,83 @@
       var t = smooth(progress);
       var anticipation = Math.sin(progress * PI);
       contactShadow.visible = false;
-      pelvis.position.y -= anticipation * 1.55;
-      spine.rotation.z = -0.04 * t + anticipation * 0.025;
-      head.rotation.z = 0.025 * t - anticipation * 0.018;
-      throwingArm.shoulder.rotation.z = -0.08 + 1.08 * t;
-      throwingArm.elbow.rotation.z = -0.28 + 1.06 * t;
-      bucketArm.shoulder.rotation.z = 0.18 + 0.04 * t;
-      bucketArm.elbow.rotation.z = 0.34 + 0.08 * t;
-      leftLeg.hip.rotation.z = -0.1 * t;
+      pelvis.position.y -= anticipation * 1.15;
+      spine.rotation.z = -0.04 * t + anticipation * 0.022;
+      head.rotation.z = 0.02 * t - anticipation * 0.016;
+      throwingArm.shoulder.rotation.z = -0.08 + 1.58 * t;
+      throwingArm.elbow.rotation.z = -0.24 + 0.92 * t;
+      bucketArm.shoulder.rotation.z = 0.14 + 0.1 * t;
+      bucketArm.elbow.rotation.z = 0.38 + 0.14 * t;
+      leftLeg.hip.rotation.z = -0.12 * t;
       rightLeg.hip.rotation.z = 0.12 * t;
-      leftLeg.knee.rotation.z = -0.2 * t;
-      rightLeg.knee.rotation.z = -0.2 * t;
+      leftLeg.knee.rotation.z = -0.28 * t;
+      rightLeg.knee.rotation.z = -0.28 * t;
+      bucketPose.rotation.z = -0.08 + 0.02 * t;
     }
 
     function poseClimbLadder(progress, cycles) {
       cycles = Math.max(2, Math.round(Number(cycles) || 2));
       var cycle = progress * TAU * cycles;
       var reach = Math.sin(cycle);
-      var travel = smooth(progress);
-      var motion = smooth(clamp01(progress / 0.14)) * smooth(clamp01((1 - progress) / 0.14));
+      var motion = smooth(clamp01(progress / 0.13)) * smooth(clamp01((1 - progress) / 0.13));
       contactShadow.visible = false;
-      pelvis.position.y += Math.abs(Math.cos(cycle)) * 0.42 * motion;
-      pelvis.rotation.y = reach * 0.018 * motion;
-      spine.rotation.z = -0.04 * (1 - travel) - reach * 0.022 * motion;
-      head.rotation.z = 0.025 * (1 - travel) - reach * 0.04 * motion;
-      throwingArm.shoulder.rotation.z = 1 + 1.45 * travel + reach * 0.07 * motion;
-      throwingArm.elbow.rotation.z = 0.78 + 0.12 * travel - reach * 0.08 * motion;
-      bucketArm.shoulder.rotation.z = 0.22 + 0.02 * travel + reach * 0.025 * motion;
-      bucketArm.elbow.rotation.z = 0.42 - 0.02 * travel - reach * 0.04 * motion;
-      leftLeg.hip.rotation.z = -0.1 + 0.18 * travel + reach * 0.16 * motion;
-      rightLeg.hip.rotation.z = 0.12 - 0.2 * travel - reach * 0.16 * motion;
-      leftLeg.knee.rotation.z = -0.2 - 0.06 * travel - (0.08 + Math.max(0, -reach) * 0.15) * motion;
-      rightLeg.knee.rotation.z = -0.2 - 0.06 * travel - (0.08 + Math.max(0, reach) * 0.15) * motion;
-      bucketPose.rotation.z = -0.08 - reach * 0.025 * motion;
+      pelvis.position.y += Math.abs(Math.sin(cycle)) * 0.85 * motion;
+      pelvis.rotation.y = reach * 0.02 * motion;
+      spine.rotation.z = -0.04 - reach * 0.025 * motion;
+      head.rotation.z = 0.02 - reach * 0.045 * motion;
+      throwingArm.shoulder.rotation.z = 1.5 + reach * 0.16 * motion;
+      throwingArm.elbow.rotation.z = 0.68 - reach * 0.12 * motion;
+      bucketArm.shoulder.rotation.z = 0.24 + reach * 0.02 * motion;
+      bucketArm.elbow.rotation.z = 0.52 - reach * 0.035 * motion;
+      leftLeg.hip.rotation.z = -0.12 + reach * 0.19 * motion;
+      rightLeg.hip.rotation.z = 0.12 - reach * 0.19 * motion;
+      leftLeg.knee.rotation.z = -0.28 - Math.max(0, -reach) * 0.16 * motion;
+      rightLeg.knee.rotation.z = -0.28 - Math.max(0, reach) * 0.16 * motion;
+      bucketPose.rotation.z = -0.06 - reach * 0.02 * motion;
     }
 
     function poseRetrieveLadder(progress) {
       var t = smooth(progress);
       contactShadow.visible = false;
-      pelvis.position.y -= Math.sin(t * PI) * 1.45;
-      spine.rotation.z = Math.sin(t * PI) * 0.07;
-      head.rotation.z = -Math.sin(t * PI) * 0.035;
-      throwingArm.shoulder.rotation.z = 2.45 + (-0.08 - 2.45) * t;
-      throwingArm.elbow.rotation.z = 0.9 + (-0.28 - 0.9) * t;
-      bucketArm.shoulder.rotation.z = 0.24 + (0.18 - 0.24) * t;
-      bucketArm.elbow.rotation.z = 0.4 + (0.34 - 0.4) * t;
-      leftLeg.hip.rotation.z = 0.08 * (1 - t);
-      rightLeg.hip.rotation.z = -0.08 * (1 - t);
-      leftLeg.knee.rotation.z = -0.26 * (1 - t);
-      rightLeg.knee.rotation.z = -0.26 * (1 - t);
-      bucketPose.rotation.z = -0.08;
+      pelvis.position.y -= Math.sin(t * PI) * 1.1;
+      spine.rotation.z = -0.04 * (1 - t) + Math.sin(t * PI) * 0.055;
+      head.rotation.z = 0.02 * (1 - t) - Math.sin(t * PI) * 0.03;
+      throwingArm.shoulder.rotation.z = 1.5 + (-0.08 - 1.5) * t;
+      throwingArm.elbow.rotation.z = 0.68 + (-0.24 - 0.68) * t;
+      bucketArm.shoulder.rotation.z = 0.24 + (0.14 - 0.24) * t;
+      bucketArm.elbow.rotation.z = 0.52 + (0.38 - 0.52) * t;
+      leftLeg.hip.rotation.z = -0.12 * (1 - t);
+      rightLeg.hip.rotation.z = 0.12 * (1 - t);
+      leftLeg.knee.rotation.z = -0.28 * (1 - t);
+      rightLeg.knee.rotation.z = -0.28 * (1 - t);
+      bucketPose.rotation.z = -0.06 + (-0.08 + 0.06) * t;
     }
 
     function posePaintSwing(progress, phase) {
       applyCarryPose();
-      var gesture = Math.sin(smooth(progress) * PI);
-      var depth = Math.sin(progress * PI * 2);
-      pelvis.rotation.y = -gesture * 0.1;
-      spine.rotation.z = -gesture * 0.14;
-      head.rotation.z = gesture * 0.055 - depth * 0.012;
-      bucketArm.shoulder.rotation.z += gesture * 0.92;
-      bucketArm.shoulder.rotation.x = depth * 0.2;
-      bucketArm.elbow.rotation.z += gesture * 0.42;
-      bucketArm.wrist.rotation.z = -gesture * 0.34;
-      bucketPose.rotation.z += -gesture * 0.72;
-      throwingArm.shoulder.rotation.z += -gesture * 0.28;
-      throwingArm.elbow.rotation.z += gesture * 0.12;
-      leftLeg.hip.rotation.z = -gesture * 0.1;
-      rightLeg.hip.rotation.z = gesture * 0.1;
-      leftLeg.knee.rotation.z = -gesture * 0.08;
+      var anticipation = smooth(clamp01(progress / 0.16)) *
+        (1 - smooth(clamp01((progress - 0.16) / 0.24)));
+      var lifted = smooth(clamp01((progress - 0.16) / 0.24)) *
+        (1 - smooth(clamp01((progress - 0.82) / 0.18)));
+      var tipped = smooth(clamp01((progress - 0.4) / 0.14)) *
+        (1 - smooth(clamp01((progress - 0.82) / 0.18)));
+      pelvis.position.y -= anticipation * 1.15;
+      pelvis.rotation.y = -(lifted * 0.055 + tipped * 0.045);
+      pelvis.rotation.z = anticipation * 0.025 - tipped * 0.035;
+      spine.rotation.z = anticipation * 0.05 - lifted * 0.075 - tipped * 0.055;
+      head.rotation.z = -anticipation * 0.025 + lifted * 0.035 + tipped * 0.025;
+      bucketArm.shoulder.rotation.z += lifted * 0.65 + tipped * 0.22;
+      bucketArm.shoulder.rotation.x = tipped * 0.12;
+      bucketArm.elbow.rotation.z += lifted * 0.38 + tipped * 0.1;
+      bucketArm.wrist.rotation.z = -lifted * 0.12 - tipped * 0.22;
+      bucketPose.rotation.z += -lifted * 0.28 - tipped * 0.82;
+      throwingArm.shoulder.rotation.z += lifted * 0.55 + tipped * 0.15;
+      throwingArm.elbow.rotation.z += lifted * 0.55 + tipped * 0.1;
+      throwingArm.wrist.rotation.z = -lifted * 0.12;
+      leftLeg.hip.rotation.z = -lifted * 0.08;
+      rightLeg.hip.rotation.z = lifted * 0.08;
+      leftLeg.knee.rotation.z = -lifted * 0.1;
+      currentPourAmount = smooth(clamp01((-bucketPose.rotation.z - 0.4) / 0.58));
     }
 
     function poseRest(progress, phase) {
@@ -433,6 +446,7 @@
     function setPose(name, progress, phase) {
       if (disposed) return;
       resetPose();
+      currentPourAmount = 0;
       contactShadow.visible = true;
       progress = clamp01(progress);
       phase = Number.isFinite(Number(phase)) ? Number(phase) : 0;
@@ -447,6 +461,10 @@
         case 'rest': poseRest(progress, phase); break;
         default: poseRest(progress, phase);
       }
+    }
+
+    function getPourAmount() {
+      return disposed ? 0 : currentPourAmount;
     }
 
     function setScreenPose(screenPose) {
@@ -560,6 +578,7 @@
       setPose: setPose,
       setScreenPose: setScreenPose,
       setPaintHue: setPaintHue,
+      getPourAmount: getPourAmount,
       setOpacity: setOpacity,
       update: update,
       dispose: dispose

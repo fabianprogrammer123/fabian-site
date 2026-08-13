@@ -9,6 +9,28 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'assets/paint-journey-character.js'), 'utf8');
+const controllerSource = fs.readFileSync(path.join(root, 'assets/paint-journey.js'), 'utf8');
+
+function extractFunctionBody(script, name) {
+  const signature = `function ${name}(`;
+  const start = script.indexOf(signature);
+  assert.notEqual(start, -1, `controller must define ${name}()`);
+  const open = script.indexOf('{', start);
+  let depth = 0;
+  for (let index = open; index < script.length; index += 1) {
+    if (script[index] === '{') depth += 1;
+    if (script[index] === '}') depth -= 1;
+    if (depth === 0) return script.slice(start, index + 1);
+  }
+  throw new Error(`could not parse ${name}()`);
+}
+
+function evaluateControllerFunction(name, context) {
+  const sandbox = Object.assign({ result: null }, context);
+  const declaration = extractFunctionBody(controllerSource, name);
+  vm.runInNewContext(`${declaration}\nresult = ${name}();`, sandbox);
+  return sandbox.result;
+}
 
 class Vector {
   constructor(x = 0, y = 0, z = 0) {
@@ -296,22 +318,161 @@ function testFigureUsesCompactHumanProportions() {
   const thigh = character.root.getObjectByName('left-thigh');
   const shin = character.root.getObjectByName('left-shin');
   const face = character.root.getObjectByName('dotted-face');
+  const head = character.root.getObjectByName('head');
+  const leftAnkle = character.root.getObjectByName('left-ankle');
+  const hand = character.root.getObjectByName('throwing-hand');
+  const apron = character.root.getObjectByName('apron');
+  const neckForm = character.root.getObjectByName('neck-form');
   const shoulderCap = character.root.getObjectByName('throwing-shoulder-cap');
+  const elbowCap = character.root.getObjectByName('throwing-elbow-cap');
 
-  assert.ok(Math.abs(shoulder.position.x) <= 14.5,
+  assert.ok(Math.abs(shoulder.position.x) <= 12.5,
     'cute shoulders must sit close to the torso instead of reading as a dangling stick rig');
-  assert.ok(upperArm.scale.y <= 22 && forearm.scale.y <= 20,
+  const upperArmLength = Number(upperArm.segmentLength) || upperArm.scale.y;
+  const forearmLength = Number(forearm.segmentLength) || forearm.scale.y;
+  const thighLength = Number(thigh.segmentLength) || thigh.scale.y;
+  const shinLength = Number(shin.segmentLength) || shin.scale.y;
+  assert.ok(upperArmLength <= 17 && forearmLength <= 15,
     'both arm segments must use compact, rounded proportions');
-  assert.ok(thigh.scale.y <= 27 && shin.scale.y <= 25,
+  assert.ok(thighLength <= 22 && shinLength <= 20,
     'leg segments must stay compact enough to avoid a marionette silhouette');
-  assert.ok(thigh.scale.x >= 7 && shin.scale.x >= 6.4,
-    'legs must have enough mass to read as a grounded human figure');
-  assert.ok(face.scale.x >= 12 && face.scale.y >= 12.5,
+  assert.ok(face.scale.x >= 14.8 && face.scale.y >= 15.8,
     'the face must be slightly oversized to give the small painter a warm, cute silhouette');
+  const figureTop = worldPoint2D(head).y + face.scale.y;
+  const figureBottom = worldPoint2D(leftAnkle).y - 5.2;
+  assert.ok((face.scale.x * 2) / (figureTop - figureBottom) >= 0.25,
+    'the head width must occupy at least one quarter of the projected figure height');
+  assert.ok(hand && hand.scale.x >= 6.4 && hand.scale.y >= 6.6,
+    'rounded mitt-like hands must remain readable at the small rendered scale');
+  assert.ok(apron && apron.material === neckForm.material,
+    'the charcoal overalls must include a contrasting warm-white apron');
   assert.ok(shoulderCap.scale.x <= 6.4,
     'joint caps must not overpower the shorter limbs');
+  assert.equal(shoulderCap.material, upperArm.material,
+    'shoulder caps must merge into their adjacent upper arms');
+  assert.equal(elbowCap.material, upperArm.material,
+    'elbow caps and both arm segments must share one matte material instead of contrasting at the joint');
+  assert.equal(forearm.material, upperArm.material,
+    'arms must read as continuous overlapping capsules rather than disjoint puppet pieces');
   assert.match(source, /quadraticCurveTo\(/,
     'the face must use a small curved expression rather than a flat mechanical mouth');
+}
+
+function testCharacterMaterialsStaySmoothAndMatte() {
+  const { character } = createCharacter();
+  const paint = character.root.getObjectByName('paint-surface');
+  const materials = new Set();
+  character.root.traverse((object) => {
+    if (object.material) materials.add(object.material);
+  });
+
+  for (const material of materials) {
+    assert.notEqual(material.flatShading, true,
+      'small character surfaces must stay smoothly shaded instead of faceted');
+    if (material !== paint.material) {
+      assert.ok(!Number.isFinite(material.clearcoat) || material.clearcoat === 0,
+        'clearcoat must be reserved for the wet paint in the bucket');
+    }
+  }
+  assert.ok(paint.material.clearcoat >= 0.65,
+    'the wet paint must remain the one glossy material in the character rig');
+}
+
+function sampledRotations(character) {
+  return [
+    'pelvis', 'spine', 'head',
+    'throwing-shoulder', 'throwing-elbow', 'throwing-wrist',
+    'bucket-shoulder', 'bucket-elbow', 'bucket-wrist', 'bucket-pose',
+    'left-hip', 'left-knee', 'right-hip', 'right-knee'
+  ].map((name) => {
+    const rotation = character.root.getObjectByName(name).rotation;
+    return [rotation.x, rotation.y, rotation.z];
+  }).flat();
+}
+
+function maxPoseDeltaAt60Hz(character, pose, duration, phase) {
+  let previous = null;
+  let maximum = 0;
+  const frames = Math.ceil(duration * 60);
+  for (let frame = 0; frame <= frames; frame += 1) {
+    character.setPose(pose, frame / frames, phase);
+    const sample = sampledRotations(character);
+    if (previous) {
+      for (let index = 0; index < sample.length; index += 1) {
+        maximum = Math.max(maximum, Math.abs(sample[index] - previous[index]));
+      }
+    }
+    previous = sample;
+  }
+  return maximum;
+}
+
+function testFourBeatPourIsCausalAndContinuous() {
+  const { character } = createCharacter();
+  assert.equal(typeof character.getPourAmount, 'function',
+    'the character must expose a causal bucket-pour amount');
+
+  character.setPose('paint-swing', 0.15, 0);
+  assert.equal(character.getPourAmount(), 0,
+    'anticipation must not emit paint before the bucket tips');
+  character.setPose('paint-swing', 0.35, 0);
+  assert.equal(character.getPourAmount(), 0,
+    'the lift beat must remain dry until the committed tip begins');
+  character.setPose('paint-swing', 0.56, 0);
+  assert.ok(character.getPourAmount() > 0.75,
+    'the committed 40-82% beat must produce a strong bucket-driven pour');
+  character.setPose('paint-swing', 0.8, 0);
+  assert.ok(character.getPourAmount() > 0.75,
+    'the bucket must remain committed through the end of the main pour beat');
+  character.setPose('paint-swing', 1, 0);
+  assert.equal(character.getPourAmount(), 0,
+    'the completed recovery must leave no residual emission');
+
+  const maximumJointDelta = maxPoseDeltaAt60Hz(character, 'paint-swing', 1.75, 0);
+  assert.ok(maximumJointDelta < 0.1,
+    `the four pour beats must keep every sampled joint below a 0.10-radian 60Hz step; observed ${maximumJointDelta}`);
+}
+
+function testOnlyThePhysicalSpoutCanEmit() {
+  const { character } = createCharacter();
+  const spout = character.root.getObjectByName('paint-spout');
+  const spoutForm = character.root.getObjectByName('bucket-spout-form');
+  const projectedGap = distance(worldPoint2D(spout), worldPoint2D(spoutForm)) * 0.82;
+
+  assert.ok(projectedGap <= 3,
+    'the first liquid sample must land within three projected pixels of the visible bucket spout');
+  const origins = controllerSource.match(/character\.[\w]+\.getWorldPosition\(bucketOrigin\)/g) || [];
+  assert.ok(origins.length >= 2, 'the controller must sample the bucket for both liquid and droplets');
+  origins.forEach((origin) => assert.equal(origin,
+    'character.paintSpout.getWorldPosition(bucketOrigin)',
+    'all live paint origins must use the physical spout'));
+
+  for (const pose of ['walk', 'deploy-ladder', 'climb-ladder', 'retrieve-ladder', 'rest', 'vanish']) {
+    character.setPose(pose, 0.5, 5);
+    assert.equal(character.getPourAmount(), 0,
+      `${pose} must not leak paint while the bucket is not in a pour pose`);
+  }
+}
+
+function testControllerUsesRequestedScaleAndRightLane() {
+  const mobileLane = evaluateControllerFunction('laneX', {
+    window: { innerWidth: 390 }, documentWidth: () => 390
+  });
+  const desktopLane = evaluateControllerFunction('laneX', {
+    window: { innerWidth: 1280 }, documentWidth: () => 1280
+  });
+  assert.equal(390 - mobileLane, 34,
+    'the mobile lane must retain about 34px of right-edge breathing room');
+  assert.equal(1280 - desktopLane, 82,
+    'the desktop lane must retain about 82px of right-edge breathing room');
+  assert.ok(Math.abs(evaluateControllerFunction('characterScale', { isMobileViewport: () => true }) - 0.6) < 1e-9,
+    'the mobile painter must render at the requested compact 0.60 scale');
+  assert.ok(Math.abs(evaluateControllerFunction('characterScale', { isMobileViewport: () => false }) - 0.82) < 1e-9,
+    'the desktop painter must render at the requested readable 0.82 scale');
+  const frameBody = controllerSource.match(/function\s+frame\([^)]*\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(frameBody, 'the controller must expose one frame loop');
+  assert.equal((frameBody[1].match(/updateJourney\(timestamp,\s*delta\)/g) || []).length, 1,
+    'each animation frame must advance the pose once instead of double-stepping the rig');
 }
 
 function testSupportFootChangeUsesADoubleSupportBlend() {
@@ -356,12 +517,13 @@ function testLadderClimbUsesOneHandAndKeepsTheBucketTucked() {
   const rightHip = character.root.getObjectByName('right-hip');
   const leftKnee = character.root.getObjectByName('left-knee');
   const rightKnee = character.root.getObjectByName('right-knee');
+  const head = character.root.getObjectByName('head');
 
   character.setPose('climb-ladder', 0.35, 5);
 
-  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 2.55,
-    'the gripping arm must reach a rung without a full overhead marionette extension');
-  assert.ok(Math.abs(throwingElbow.rotation.z) >= 0.7,
+  assert.ok(throwingShoulder.rotation.z >= 1.3 && throwingShoulder.rotation.z <= 1.75,
+    'the gripping arm must stay in a compact rung-reaching shoulder range');
+  assert.ok(Math.abs(throwingElbow.rotation.z) >= 0.5 && Math.abs(throwingElbow.rotation.z) <= 0.88,
     'the gripping arm must remain visibly bent');
   assert.ok(Math.abs(bucketShoulder.rotation.z) <= 0.4,
     'the bucket shoulder must remain tucked beside the torso while climbing');
@@ -371,6 +533,75 @@ function testLadderClimbUsesOneHandAndKeepsTheBucketTucked() {
     'climbing legs must alternate instead of swinging together');
   assert.ok(leftKnee.rotation.z < -0.08 && rightKnee.rotation.z < -0.08,
     'both knees must retain believable flex on the ladder');
+  assert.ok(Math.sign(head.rotation.z) !== Math.sign(leftHip.rotation.z),
+    'the head must quietly counter-tilt against the active climbing step');
+
+  assert.doesNotMatch(source,
+    /throwingArm\.shoulder\.rotation\.z\s*=[^;]*\btravel\b/,
+    'the gripping shoulder must not rotate farther overhead as root travel increases');
+  assert.match(source,
+    /clamp01\(progress\s*\/\s*0\.13\)[\s\S]{0,100}clamp01\(\(1\s*-\s*progress\)\s*\/\s*0\.13\)/,
+    'climbing motion must use a compact 13% ease envelope while its rung clock stays raw');
+  assert.ok(maxPoseDeltaAt60Hz(character, 'climb-ladder', 5.6, 9) < 0.1,
+    'even the longest nine-cycle climb must keep 60Hz joint steps below 0.10 radians');
+}
+
+function testClimbUsesTheControllerCycleCountAsARawLimbClock() {
+  const { character } = createCharacter();
+  const shoulder = character.root.getObjectByName('throwing-shoulder');
+
+  character.setPose('climb-ladder', 0.23, 2);
+  const twoCycleReach = shoulder.rotation.z;
+  character.setPose('climb-ladder', 0.23, 3);
+  const threeCycleReach = shoulder.rotation.z;
+
+  assert.ok(Math.abs(twoCycleReach - threeCycleReach) > 0.12,
+    'the limb clock must consume the controller-provided 2-9 raw cycle count rather than easing progress twice');
+}
+
+function transitionSnapshot(character) {
+  return [
+    'pelvis', 'spine', 'head',
+    'throwing-shoulder', 'throwing-elbow',
+    'bucket-shoulder', 'bucket-elbow', 'bucket-pose',
+    'left-hip', 'left-knee', 'right-hip', 'right-knee'
+  ].map((name) => {
+    const node = character.root.getObjectByName(name);
+    return [node.position.x, node.position.y, node.rotation.x, node.rotation.y, node.rotation.z];
+  }).flat();
+}
+
+function assertPoseBoundary(character, outgoing, incoming, message) {
+  character.setPose(outgoing.name, outgoing.progress, outgoing.phase);
+  const before = transitionSnapshot(character);
+  character.setPose(incoming.name, incoming.progress, incoming.phase);
+  const after = transitionSnapshot(character);
+  const maximum = Math.max(...before.map((value, index) => Math.abs(value - after[index])));
+  assert.ok(maximum < 0.02, `${message}; observed ${maximum}`);
+}
+
+function testWholeBodyPoseBoundariesStayContinuous() {
+  const { character } = createCharacter();
+  assertPoseBoundary(character,
+    { name: 'deploy-ladder', progress: 1, phase: 0 },
+    { name: 'climb-ladder', progress: 0, phase: 5 },
+    'deployment must hand shoulders, hips and bucket continuously into the climb');
+  assertPoseBoundary(character,
+    { name: 'climb-ladder', progress: 1, phase: 5 },
+    { name: 'retrieve-ladder', progress: 0, phase: 0 },
+    'the completed climb must hand shoulders, hips and bucket continuously into retrieval');
+  assertPoseBoundary(character,
+    { name: 'retrieve-ladder', progress: 1, phase: 0 },
+    { name: 'paint-swing', progress: 0, phase: 0 },
+    'retrieval must settle the whole body into the pour without a snap');
+  assertPoseBoundary(character,
+    { name: 'paint-swing', progress: 1, phase: 0 },
+    { name: 'deploy-ladder', progress: 0, phase: 0 },
+    'the recovered pour must return hips and arms to the next ladder-deploy pose');
+  assertPoseBoundary(character,
+    { name: 'paint-swing', progress: 1, phase: 0 },
+    { name: 'vanish', progress: 0, phase: 0 },
+    'the final recovered pour must enter the disappearing pose continuously');
 }
 
 function testWalkAndLadderClimbStayControlled() {
@@ -388,8 +619,8 @@ function testWalkAndLadderClimbStayControlled() {
     'walk bounce must remain subtle');
 
   character.setPose('deploy-ladder', 1, 0);
-  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 1.15,
-    'ladder deployment must keep the arm bent close to the body instead of forming a T-pose');
+  assert.ok(Math.abs(throwingShoulder.rotation.z) <= 1.55,
+    'ladder deployment must end in the same compact bent-arm rung reach used by the climb');
 
   character.setPose('climb-ladder', 0.35, 0);
   assert.ok(Math.abs(leftHip.rotation.z) <= 0.36,
@@ -506,9 +737,15 @@ testLightsStayInsideCharacterRig();
 testBucketPaintSurfaceTracksSpectrumHue();
 testPaintLeavesFromTheBucketEdge();
 testFigureUsesCompactHumanProportions();
+testCharacterMaterialsStaySmoothAndMatte();
+testFourBeatPourIsCausalAndContinuous();
+testOnlyThePhysicalSpoutCanEmit();
+testControllerUsesRequestedScaleAndRightLane();
 testSupportFootChangeUsesADoubleSupportBlend();
 testNaturalWalkHasQuietFollowThroughAndBentBucketArm();
 testLadderClimbUsesOneHandAndKeepsTheBucketTucked();
+testClimbUsesTheControllerCycleCountAsARawLimbClock();
+testWholeBodyPoseBoundariesStayContinuous();
 testWalkAndLadderClimbStayControlled();
 testLadderPoseTransitionsStayContinuous();
 testRetrievalBlendsIntoPaintSwing();

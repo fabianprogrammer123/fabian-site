@@ -149,7 +149,8 @@
 
   function laneX() {
     var inset = window.innerWidth <= 520 ? 12 : 66;
-    return documentWidth() - inset;
+    var silhouetteInset = window.innerWidth <= 520 ? 22 : 16;
+    return documentWidth() - inset - silhouetteInset;
   }
 
   function portraitPoint(element, rect) {
@@ -453,7 +454,9 @@
   }
 
   function characterScale() {
-    return isMobileViewport() ? 0.44 : 0.68;
+    var baseScale = isMobileViewport() ? 0.44 : 0.68;
+    var headReadabilityScale = isMobileViewport() ? 0.16 : 0.14;
+    return baseScale + headReadabilityScale;
   }
 
   function positionCharacter(point) {
