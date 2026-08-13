@@ -121,6 +121,106 @@ function testVisiblePacketsCullDeterministically() {
   assert.equal(first.gestures[0].control.x, 560, 'visible packets must retain the quadratic control point');
 }
 
+function testSimulationPacketsTrackSourceRevisionsAndStayIsolated() {
+  const model = window.PaintJourney.createLiquidModel({ maxGestures: 12 });
+  assert.equal(typeof model.getSimulationPacket, 'function',
+    'the liquid model must expose revisioned full-document simulation packets');
+  assert.deepEqual(plain(model.getSimulationPacket()), {
+    revision: 0,
+    layoutRevision: 0,
+    gestures: []
+  }, 'an empty model must start at revision zero with an exact packet shape');
+
+  const original = gesture('landing:revisioned');
+  model.upsertGesture(original);
+  assert.deepEqual(plain(model.getSimulationPacket()), {
+    revision: 1,
+    layoutRevision: 0,
+    gestures: [original]
+  }, 'the first stored gesture must advance only the source revision');
+
+  const pristine = plain(model.getSimulationPacket());
+  const exposed = model.getSimulationPacket();
+  exposed.revision = 99;
+  exposed.layoutRevision = 99;
+  exposed.gestures[0].from.x = -999;
+  exposed.gestures[0].reveal = 1;
+  exposed.gestures.push(gesture('landing:injected'));
+  assert.deepEqual(plain(model.getSimulationPacket()), pristine,
+    'simulation packets and their nested gestures must be detached from model state');
+
+  model.setReveal('landing:revisioned', 0.65);
+  let packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 2, 'a larger reveal must advance the source revision exactly once');
+  assert.equal(packet.layoutRevision, 0, 'reveal progress must not count as a layout change');
+  assert.equal(packet.gestures[0].reveal, 0.65, 'the larger reveal must be stored');
+
+  model.setReveal('landing:revisioned', 0.65);
+  model.setReveal('landing:revisioned', 0.2);
+  packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 2, 'equal or smaller reveals must not churn the source revision');
+  assert.equal(packet.layoutRevision, 0, 'equal or smaller reveals must not churn the layout revision');
+  assert.equal(packet.gestures[0].reveal, 0.65, 'equal or smaller reveals must not lower stored progress');
+
+  const responsiveGeometry = {
+    from: { x: 740, y: 1330 },
+    control: { x: 420, y: 1250 },
+    to: { x: 60, y: 1290 },
+    width: 210,
+    spread: 0.88,
+    kind: 1
+  };
+  model.reflow('landing:revisioned', responsiveGeometry);
+  packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 3, 'a real geometry reflow must advance the source revision exactly once');
+  assert.equal(packet.layoutRevision, 1, 'a real geometry reflow must advance the layout revision exactly once');
+
+  model.reflow('landing:revisioned', {
+    from: { ...responsiveGeometry.from },
+    control: { ...responsiveGeometry.control },
+    to: { ...responsiveGeometry.to },
+    width: responsiveGeometry.width,
+    spread: responsiveGeometry.spread,
+    kind: responsiveGeometry.kind
+  });
+  packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 3, 'an identical normalized reflow must not churn the source revision');
+  assert.equal(packet.layoutRevision, 1, 'an identical normalized reflow must not churn the layout revision');
+
+  const normalizedNoop = {
+    id: 'landing:revisioned',
+    from: { x: '740', y: '1330' },
+    control: { x: '420', y: '1250' },
+    to: { x: '60', y: '1290' },
+    width: '210',
+    palettePhase: '0.62',
+    seed: '4',
+    reveal: -10,
+    spread: '0.88',
+    kind: 1.2
+  };
+  model.upsertGesture(normalizedNoop);
+  packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 3,
+    'an upsert that normalizes to stored values must not churn the source revision');
+  assert.equal(packet.layoutRevision, 1, 'a no-op upsert must not churn the layout revision');
+  assert.equal(packet.gestures[0].reveal, 0.65, 'a lower upsert reveal must not erase stored progress');
+
+  model.upsertGesture({ ...normalizedNoop, width: '211', reveal: 0.82 });
+  packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 4, 'one changed normalized upsert must advance the source revision once');
+  assert.equal(packet.layoutRevision, 1, 'upsert changes must not count as explicit layout reflows');
+  assert.equal(packet.gestures[0].width, 211, 'the changed normalized upsert must be stored');
+  assert.equal(packet.gestures[0].reveal, 0.82, 'a larger upsert reveal must be stored');
+
+  model.upsertGesture({ ...normalizedNoop, width: 211, reveal: 0.1 });
+  packet = plain(model.getSimulationPacket());
+  assert.equal(packet.revision, 4, 'an unchanged normalized upsert must not advance the source revision');
+  assert.equal(packet.layoutRevision, 1, 'an unchanged normalized upsert must not advance the layout revision');
+  assert.equal(packet.gestures[0].reveal, 0.82, 'later upserts must not decrease reveal progress');
+}
+
+testSimulationPacketsTrackSourceRevisionsAndStayIsolated();
 testStableIdsAndBoundedGestureBudget();
 testRevealIsMonotonicAndClamped();
 testReflowPreservesPaintIdentityAndProgress();

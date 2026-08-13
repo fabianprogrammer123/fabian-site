@@ -37,6 +37,23 @@
     };
   }
 
+  function samePoint(first, second) {
+    return first.x === second.x && first.y === second.y;
+  }
+
+  function sameGesture(first, second) {
+    return first.id === second.id &&
+      samePoint(first.from, second.from) &&
+      samePoint(first.control, second.control) &&
+      samePoint(first.to, second.to) &&
+      first.width === second.width &&
+      first.palettePhase === second.palettePhase &&
+      first.seed === second.seed &&
+      first.reveal === second.reveal &&
+      first.spread === second.spread &&
+      first.kind === second.kind;
+  }
+
   function intersectsViewport(gesture, viewport) {
     var halfWidth = gesture.width * gesture.spread * 0.5 + 32;
     var minimumX = Math.min(gesture.from.x, gesture.control.x, gesture.to.x) - halfWidth;
@@ -55,6 +72,8 @@
     var maxGestures = clamp(requestedMaximum, 1, SHADER_GESTURE_LIMIT);
     var gestures = [];
     var gestureById = Object.create(null);
+    var revision = 0;
+    var layoutRevision = 0;
 
     function normalizeGesture(payload, previous) {
       var fallbackPoint = previous ? previous.from : { x: 0, y: 0 };
@@ -83,12 +102,14 @@
       if (!previous && gestures.length >= maxGestures) return null;
       var next = normalizeGesture(payload, previous);
       if (previous) {
+        if (sameGesture(previous, next)) return copyGesture(previous);
         var index = gestures.indexOf(previous);
         gestures[index] = next;
       } else {
         gestures.push(next);
       }
       gestureById[id] = next;
+      revision += 1;
       return copyGesture(next);
     }
 
@@ -96,28 +117,42 @@
       var gesture = gestureById[String(id)];
       if (!gesture) return null;
       var requested = clamp(finite(progress, gesture.reveal), 0, 1);
-      gesture.reveal = Math.max(gesture.reveal, requested);
+      if (requested > gesture.reveal) {
+        gesture.reveal = requested;
+        revision += 1;
+      }
       return gesture.reveal;
     }
 
     function reflow(id, geometry) {
       var gesture = gestureById[String(id)];
       if (!gesture || !geometry) return null;
-      if (geometry.from) gesture.from = copyPoint(geometry.from, gesture.from);
-      if (geometry.control) gesture.control = copyPoint(geometry.control, gesture.control);
-      if (geometry.to) gesture.to = copyPoint(geometry.to, gesture.to);
-      if (geometry.width !== undefined) gesture.width = Math.max(1, finite(geometry.width, gesture.width));
+      var next = copyGesture(gesture);
+      if (geometry.from) next.from = copyPoint(geometry.from, gesture.from);
+      if (geometry.control) next.control = copyPoint(geometry.control, gesture.control);
+      if (geometry.to) next.to = copyPoint(geometry.to, gesture.to);
+      if (geometry.width !== undefined) next.width = Math.max(1, finite(geometry.width, gesture.width));
       if (geometry.spread !== undefined) {
-        gesture.spread = clamp(finite(geometry.spread, gesture.spread), 0.1, 2.5);
+        next.spread = clamp(finite(geometry.spread, gesture.spread), 0.1, 2.5);
       }
       if (geometry.kind !== undefined) {
-        gesture.kind = clamp(Math.round(finite(geometry.kind, gesture.kind)), 0, 3);
+        next.kind = clamp(Math.round(finite(geometry.kind, gesture.kind)), 0, 3);
       }
-      return copyGesture(gesture);
+      if (sameGesture(gesture, next)) return copyGesture(gesture);
+      var index = gestures.indexOf(gesture);
+      gestures[index] = next;
+      gestureById[String(id)] = next;
+      revision += 1;
+      layoutRevision += 1;
+      return copyGesture(next);
     }
 
     function getGesture(id) {
       return copyGesture(gestureById[String(id)]);
+    }
+
+    function getSimulationPacket() {
+      return { revision: revision, layoutRevision: layoutRevision, gestures: gestures.map(copyGesture) };
     }
 
     function getVisiblePacket(viewport) {
@@ -152,6 +187,7 @@
       setReveal: setReveal,
       reflow: reflow,
       getGesture: getGesture,
+      getSimulationPacket: getSimulationPacket,
       getVisiblePacket: getVisiblePacket
     };
     Object.defineProperty(api, 'count', {
