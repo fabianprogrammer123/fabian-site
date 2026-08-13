@@ -146,7 +146,7 @@
     '  if (uEmitterStyle.x > 0.5) {',
     '    vec2 emitterFront = mix(uEmitterPath.xy, uEmitterPath.zw, clamp(uEmitterStyle.y, 0.0, 1.0));',
     '    float emitterRadius = 10.0 + uEmitterStyle.y * 24.0;',
-    '    float emitterDistance = lineSegmentDistance(warpedPoint, uEmitterPath.xy, emitterFront) - emitterRadius;',
+    '    float emitterDistance = lineSegmentDistance(documentPoint, uEmitterPath.xy, emitterFront) - emitterRadius;',
     '    liquidDistance = smoothMinPolynomial(liquidDistance, emitterDistance, 18.0);',
     '    if (emitterDistance < nearestDistance) {',
     '      nearestDistance = emitterDistance;',
@@ -275,6 +275,15 @@
       documentWidth: 1,
       documentHeight: 1
     };
+    var emitterState = {
+      active: 0,
+      originX: 0,
+      originY: 0,
+      frontX: 0,
+      frontY: 0,
+      pressure: 0,
+      palettePhase: 0
+    };
     var ambient = false;
     var frozen = false;
     var dirty = true;
@@ -293,15 +302,35 @@
       return { width: targetWidth, height: targetHeight };
     }
 
+    function resizeTarget() {
+      var dimensions = targetDimensions(viewport.width, viewport.height);
+      if (target.width !== dimensions.width || target.height !== dimensions.height) {
+        target.setSize(dimensions.width, dimensions.height);
+      }
+      targetSizeUniform[0] = dimensions.width;
+      targetSizeUniform[1] = dimensions.height;
+    }
+
     function setViewport(nextViewport) {
-      if (disposed) return;
+      if (disposed) return false;
       nextViewport = nextViewport || {};
-      viewport.width = Math.max(1, finite(nextViewport.width, viewport.width));
-      viewport.height = Math.max(1, finite(nextViewport.height, viewport.height));
-      viewport.scrollX = finite(nextViewport.scrollX, viewport.scrollX);
-      viewport.scrollY = finite(nextViewport.scrollY, viewport.scrollY);
-      viewport.documentWidth = Math.max(1, finite(nextViewport.documentWidth, viewport.documentWidth));
-      viewport.documentHeight = Math.max(1, finite(nextViewport.documentHeight, viewport.documentHeight));
+      var nextWidth = Math.max(1, finite(nextViewport.width, viewport.width));
+      var nextHeight = Math.max(1, finite(nextViewport.height, viewport.height));
+      var nextScrollX = finite(nextViewport.scrollX, viewport.scrollX);
+      var nextScrollY = finite(nextViewport.scrollY, viewport.scrollY);
+      var nextDocumentWidth = Math.max(1, finite(nextViewport.documentWidth, viewport.documentWidth));
+      var nextDocumentHeight = Math.max(1, finite(nextViewport.documentHeight, viewport.documentHeight));
+      if (viewport.width === nextWidth && viewport.height === nextHeight &&
+          viewport.scrollX === nextScrollX && viewport.scrollY === nextScrollY &&
+          viewport.documentWidth === nextDocumentWidth && viewport.documentHeight === nextDocumentHeight) {
+        return false;
+      }
+      viewport.width = nextWidth;
+      viewport.height = nextHeight;
+      viewport.scrollX = nextScrollX;
+      viewport.scrollY = nextScrollY;
+      viewport.documentWidth = nextDocumentWidth;
+      viewport.documentHeight = nextDocumentHeight;
 
       viewportUniform[0] = viewport.scrollX;
       viewportUniform[1] = viewport.scrollY;
@@ -310,31 +339,57 @@
       documentSizeUniform[0] = viewport.documentWidth;
       documentSizeUniform[1] = viewport.documentHeight;
 
-      var dimensions = targetDimensions(viewport.width, viewport.height);
-      if (target.width !== dimensions.width || target.height !== dimensions.height) {
-        target.setSize(dimensions.width, dimensions.height);
-      }
-      targetSizeUniform[0] = dimensions.width;
-      targetSizeUniform[1] = dimensions.height;
+      resizeTarget();
       composite.position.set(viewport.width * 0.5, viewport.height * 0.5, 4);
       composite.scale.set(viewport.width, viewport.height, 1);
       dirty = true;
+      return true;
     }
 
     function setEmitter(emitter) {
-      if (disposed) return;
+      if (disposed) return false;
       emitter = emitter || {};
       var origin = copyPoint(emitter.origin);
       var front = copyPoint(emitter.front || emitter.origin);
-      emitterPath[0] = origin.x;
-      emitterPath[1] = origin.y;
-      emitterPath[2] = front.x;
-      emitterPath[3] = front.y;
-      emitterStyle[0] = emitter.active ? 1 : 0;
-      emitterStyle[1] = clamp(finite(emitter.pressure, 0), 0, 1);
-      emitterStyle[2] = finite(emitter.palettePhase, 0);
+      var active = emitter.active ? 1 : 0;
+      var pressure = clamp(finite(emitter.pressure, 0), 0, 1);
+      var palettePhase = finite(emitter.palettePhase, 0);
+      if (emitterState.active === active && emitterState.originX === origin.x &&
+          emitterState.originY === origin.y && emitterState.frontX === front.x &&
+          emitterState.frontY === front.y && emitterState.pressure === pressure &&
+          emitterState.palettePhase === palettePhase) {
+        return false;
+      }
+      emitterState.active = active;
+      emitterState.originX = origin.x;
+      emitterState.originY = origin.y;
+      emitterState.frontX = front.x;
+      emitterState.frontY = front.y;
+      emitterState.pressure = pressure;
+      emitterState.palettePhase = palettePhase;
+      emitterPath[0] = emitterState.originX;
+      emitterPath[1] = emitterState.originY;
+      emitterPath[2] = emitterState.frontX;
+      emitterPath[3] = emitterState.frontY;
+      emitterStyle[0] = emitterState.active;
+      emitterStyle[1] = emitterState.pressure;
+      emitterStyle[2] = emitterState.palettePhase;
       emitterStyle[3] = 0;
       dirty = true;
+      return true;
+    }
+
+    function setMobile(value) {
+      if (disposed) return false;
+      var nextMobile = Boolean(value);
+      if (mobile === nextMobile) return false;
+      mobile = nextMobile;
+      internalScale = mobile ? MOBILE_SCALE : DESKTOP_SCALE;
+      ambientInterval = mobile ? MOBILE_AMBIENT_INTERVAL : DESKTOP_AMBIENT_INTERVAL;
+      ambientAccumulator = 0;
+      resizeTarget();
+      dirty = true;
+      return true;
     }
 
     function uploadVisibleGestures() {
@@ -416,6 +471,7 @@
     return {
       setViewport: setViewport,
       setEmitter: setEmitter,
+      setMobile: setMobile,
       update: update,
       setAmbient: setAmbient,
       freeze: freeze,

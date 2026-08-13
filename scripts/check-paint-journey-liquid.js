@@ -226,31 +226,112 @@ function testOneBoundedSurfaceAndFixedUniformPacket() {
 
 function testMobileResolutionAndAmbientFrameBudgets() {
   const desktop = createFieldHarness(false);
-  desktop.field.setViewport({
+  const desktopViewport = {
     width: 1280, height: 720, scrollX: 0, scrollY: 1000,
     documentWidth: 1280, documentHeight: 1800
-  });
+  };
+  const desktopEmitter = {
+    active: true,
+    origin: { x: 980, y: 1600 },
+    front: { x: 720, y: 1540 },
+    pressure: 0.8,
+    palettePhase: 0.62
+  };
+  desktop.field.setViewport(desktopViewport);
+  desktop.field.setEmitter(desktopEmitter);
   desktop.field.update(1 / 60, 0);
   desktop.records.renderCalls.length = 0;
   desktop.field.setAmbient(true);
-  for (let frame = 1; frame <= 60; frame += 1) desktop.field.update(1 / 60, frame / 60);
+  for (let frame = 1; frame <= 60; frame += 1) {
+    desktop.field.setViewport({ ...desktopViewport });
+    desktop.field.setEmitter({
+      ...desktopEmitter,
+      origin: { ...desktopEmitter.origin },
+      front: { ...desktopEmitter.front }
+    });
+    desktop.field.update(1 / 60, frame / 60);
+  }
   assert.ok(desktop.records.renderCalls.length >= 23 && desktop.records.renderCalls.length <= 25,
-    'desktop ambient morphing must be intentionally throttled to about 24fps');
+    'identical per-frame inputs must not defeat the desktop 24fps ambient throttle');
 
   const mobile = createFieldHarness(true);
-  mobile.field.setViewport({
+  const mobileViewport = {
     width: 390, height: 844, scrollX: 0, scrollY: 900,
     documentWidth: 390, documentHeight: 2600
-  });
+  };
+  const mobileEmitter = {
+    active: true,
+    origin: { x: 340, y: 1560 },
+    front: { x: 96, y: 1510 },
+    pressure: 0.72,
+    palettePhase: 0.18
+  };
+  mobile.field.setViewport(mobileViewport);
+  mobile.field.setEmitter(mobileEmitter);
   const target = mobile.records.targets[0];
   assert.ok(target.width <= Math.floor(390 * 0.55) && target.height <= Math.floor(844 * 0.55),
     'mobile internal resolution must use the smaller 0.55 CSS-pixel scale');
   mobile.field.update(1 / 60, 0);
   mobile.records.renderCalls.length = 0;
   mobile.field.setAmbient(true);
-  for (let frame = 1; frame <= 60; frame += 1) mobile.field.update(1 / 60, frame / 60);
+  for (let frame = 1; frame <= 60; frame += 1) {
+    mobile.field.setViewport({ ...mobileViewport });
+    mobile.field.setEmitter({
+      ...mobileEmitter,
+      origin: { ...mobileEmitter.origin },
+      front: { ...mobileEmitter.front }
+    });
+    mobile.field.update(1 / 60, frame / 60);
+  }
   assert.ok(mobile.records.renderCalls.length >= 14 && mobile.records.renderCalls.length <= 16,
-    'mobile ambient morphing must be intentionally throttled to about 15fps');
+    'identical per-frame inputs must not defeat the mobile 15fps ambient throttle');
+}
+
+function testResponsiveModeCanCrossTheMobileBreakpoint() {
+  const harness = createFieldHarness(false);
+  const viewport = {
+    width: 1280, height: 720, scrollX: 0, scrollY: 1000,
+    documentWidth: 1280, documentHeight: 1800
+  };
+  harness.field.setViewport(viewport);
+  const target = harness.records.targets[0];
+  const desktopSize = [target.width, target.height];
+
+  assert.equal(typeof harness.field.setMobile, 'function',
+    'the liquid field must adapt when a live viewport crosses the mobile breakpoint');
+  harness.field.setMobile(true);
+  assert.ok(
+    target.width <= Math.floor(viewport.width * 0.55) &&
+      target.height <= Math.floor(viewport.height * 0.55),
+    'crossing to mobile must immediately apply the smaller internal resolution'
+  );
+  assert.notDeepEqual([target.width, target.height], desktopSize,
+    'crossing to mobile must actually resize an existing desktop target');
+  assert.equal(harness.records.targets.length, 1,
+    'responsive mode changes must resize rather than allocate another target');
+
+  harness.field.update(1 / 60, 0);
+  harness.records.renderCalls.length = 0;
+  harness.field.setAmbient(true);
+  for (let frame = 1; frame <= 60; frame += 1) {
+    harness.field.setMobile(true);
+    harness.field.update(1 / 60, frame / 60);
+  }
+  assert.ok(harness.records.renderCalls.length >= 14 && harness.records.renderCalls.length <= 16,
+    'crossing to mobile must switch ambient rendering to about 15fps');
+
+  harness.field.setMobile(false);
+  assert.deepEqual([target.width, target.height], desktopSize,
+    'crossing back to desktop must restore desktop target density');
+  harness.field.update(1 / 60, 2);
+  harness.records.renderCalls.length = 0;
+  harness.field.setAmbient(true);
+  for (let frame = 1; frame <= 60; frame += 1) {
+    harness.field.setMobile(false);
+    harness.field.update(1 / 60, 2 + frame / 60);
+  }
+  assert.ok(harness.records.renderCalls.length >= 23 && harness.records.renderCalls.length <= 25,
+    'crossing back to desktop must restore the 24fps ambient budget');
 }
 
 function testFreezeAndDisposalAreStable() {
@@ -293,6 +374,10 @@ function testShaderContainsTheContinuousLiquidMaterial() {
     'contour bands must sample a grounded pigment immediately above the authored phase');
   assert.match(fieldSource, /if\s*\(\s*endShape\.w\s*>\s*0\.0001\s*\)/,
     'a zero-reveal gesture must not render a full-width starting blob');
+  assert.match(fieldSource, /emitterDistance\s*=\s*lineSegmentDistance\s*\(\s*documentPoint\s*,/,
+    'the live emitter capsule must remain attached to the unwarped bucket position');
+  assert.doesNotMatch(fieldSource, /emitterDistance\s*=\s*lineSegmentDistance\s*\(\s*warpedPoint\s*,/,
+    'domain warping must not pull the live liquid source away from the bucket');
   assert.match(fieldSource, /capillaryEdge/,
     'the material must define a dark capillary edge');
   assert.match(fieldSource, /selfShadow/,
@@ -303,6 +388,7 @@ function testShaderContainsTheContinuousLiquidMaterial() {
 
 testOneBoundedSurfaceAndFixedUniformPacket();
 testMobileResolutionAndAmbientFrameBudgets();
+testResponsiveModeCanCrossTheMobileBreakpoint();
 testFreezeAndDisposalAreStable();
 testShaderContainsTheContinuousLiquidMaterial();
 
