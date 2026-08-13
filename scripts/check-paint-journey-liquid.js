@@ -377,12 +377,18 @@ function testShaderContainsTheContinuousLiquidMaterial() {
     'each landing must widen organically from a narrow bucket neck instead of forming a giant capsule');
   assert.match(fieldSource, /CONTOUR_BANDS\s*=\s*12/,
     'the liquid body must use twelve narrow marbled contour strata');
+  assert.match(fieldSource, /SPECTRUM_STRIPE_SPAN\s*=\s*0\.8[0-9]/,
+    'one broad liquid surface must carry nearly the complete ordered pigment spectrum');
+  assert.match(fieldSource, /normalizedStripe[\s\S]{0,260}SPECTRUM_STRIPE_SPAN/,
+    'stripe pigment must derive from normalized cross-surface position rather than neighboring hues');
   assert.match(fieldSource, /nearestTravel[\s\S]{0,400}uTime/,
     'internal pigment motion must advance along the authored path over time');
   assert.match(fieldSource, /fwidth\s*\(/,
     'contour transitions must use derivative antialiasing instead of hard posterized edges');
   assert.match(fieldSource, /surfaceNormal/,
     'the wet surface must derive a stable light-facing normal from its closest centerline');
+  assert.match(fieldSource, /surfaceNormal\s*=\s*normalize\(nearestProbePoint\s*-\s*nearestCenter/,
+    'wet-light normals must use the same warped probe coordinate as the liquid distance field');
   assert.match(fieldSource, /wetSpecular/,
     'the liquid must carry a narrow directional wet highlight');
   assert.match(fieldSource, /fresnelEdge/,

@@ -151,6 +151,10 @@ requirePattern(/state\s*===\s*'paint-swing'[\s\S]{0,220}updateLandingLiquid\(pro
   'each upper surface gesture must lock its pigment before emitting bucket droplets');
 requirePattern(/function\s+updateLiquidViewport\s*\(/,
   'the liquid surface must have one document-to-viewport update path');
+requirePattern(/function\s+measureReadingLane\s*\([^)]*\)[\s\S]{0,900}\.journey-content[\s\S]{0,900}readingLane\.left[\s\S]{0,260}readingLane\.right[\s\S]{0,260}readingLane\.feather[\s\S]{0,260}readingLane\.opacity/,
+  'the liquid viewport must include a softly protected central reading lane');
+requirePattern(/function\s+updateLiquidViewport\s*\([^)]*\)[\s\S]{0,800}contentLeft:\s*readingLane\.left[\s\S]{0,260}contentRight:\s*readingLane\.right/,
+  'the liquid viewport must reuse cached reading-lane bounds without a per-frame layout read');
 requirePattern(/function\s+frame\s*\([^)]*\)[\s\S]{0,600}liquidTime\s*\+=\s*delta[\s\S]{0,220}updateLiquidViewport\(\)[\s\S]{0,180}liquid\.update\(delta,\s*liquidTime\)/,
   'every live frame must refresh document scroll uniforms and advance only accumulated visible time');
 requirePattern(/function\s+cleanupActorLayer\s*\([^)]*\)[\s\S]{0,700}ladder\.dispose\(\)[\s\S]{0,180}particles\.dispose\(\)[\s\S]{0,180}character\.dispose\(\)/,
@@ -161,6 +165,8 @@ requirePattern(/function\s+renderAmbientLiquid\s*\([^)]*\)[\s\S]{0,900}liquid\.u
   'ambient rendering must honor the liquid field throttle before compositing');
 requirePattern(/function\s+reflowCompletedLiquid\s*\([^)]*\)[\s\S]{0,2400}liquidModel\.getGesture\('landing:'[\s\S]{0,1000}liquidModel\.getGesture\([\s\S]{0,900}'connector:'/,
   'settled layout changes must reflow stable semantic landings and connectors');
+requirePattern(/function\s+recomputeLayout\s*\([^)]*\)[\s\S]{0,600}computeWaypoints\(\)[\s\S]{0,260}reflowCompletedLiquid\(previousWaypoints,\s*waypoints\)/,
+  'active resize and details changes must also reflow every previously completed gesture');
 requirePattern(/window\.addEventListener\('pagehide',\s*handlePageHide\)/,
   'the retained renderer must be released during page navigation');
 assert.doesNotMatch(source, /LANDING_SEGMENTS|landingPaintStep|landingPathStartStep/,
@@ -480,7 +486,11 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
   }
 
   const levels = Object.fromEntries(Object.keys(levelTops).map((name) => [name, makeLevel(name)]));
-  const journeyContent = {};
+  const journeyContent = {
+    getBoundingClientRect() {
+      return { left: 170, right: width - 170, width: width - 340, top: 0, bottom: 1800 };
+    }
+  };
   const stage = {
     classList: { toggle() {} },
     querySelector() { return null; },
@@ -750,6 +760,13 @@ async function testCompletionRetainsOnlyAmbientLiquid() {
     'completion must replace the active resize listener with one settled listener');
   assert.equal(harness.listenerCount('document', 'toggle'), 1,
     'completion must replace the active toggle listener with one settled reflow listener');
+  const protectedViewport = harness.records.liquidViewports.at(-1);
+  assert.equal(protectedViewport.contentLeft, 170,
+    'the liquid field must receive the live content-column left edge');
+  assert.equal(protectedViewport.contentRight, 830,
+    'the liquid field must receive the live content-column right edge');
+  assert.ok(protectedViewport.contentOpacity >= 0.5 && protectedViewport.contentOpacity <= 0.7,
+    'the reading lane must soften pigment without erasing it');
 
   staleEscapeListener({ key: 'Escape' });
   assert.equal(harness.window.PaintJourneyState, 'complete',

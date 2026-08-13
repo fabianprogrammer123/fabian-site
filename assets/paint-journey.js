@@ -98,6 +98,7 @@
   var settledListenersAttached = false;
   var settledLayoutPending = false;
   var settledResizeObserver = null;
+  var readingLane = { left: 0, right: 1, feather: 88, opacity: 0.68, measured: false };
 
   function setState(nextState, timestamp) {
     state = nextState;
@@ -268,15 +269,35 @@
     return output;
   }
 
+  function measureReadingLane() {
+    var viewportWidth = Math.max(1, window.innerWidth);
+    var contentElement = document.querySelector('.journey-content');
+    var contentRect = contentElement && typeof contentElement.getBoundingClientRect === 'function'
+      ? contentElement.getBoundingClientRect()
+      : null;
+    var defaultInset = viewportWidth <= 520 ? 20 : Math.max(20, (viewportWidth - 700) * 0.5);
+    readingLane.left = contentRect ? clamp(contentRect.left, 0, viewportWidth) : defaultInset;
+    readingLane.right = contentRect ? clamp(contentRect.right, 0, viewportWidth) : viewportWidth - defaultInset;
+    readingLane.feather = viewportWidth <= 520 ? 38 : 88;
+    readingLane.opacity = viewportWidth <= 520 ? 0.70 : 0.68;
+    readingLane.measured = true;
+  }
+
   function updateLiquidViewport() {
     if (!liquid) return;
+    if (!readingLane.measured) measureReadingLane();
+    var viewportWidth = Math.max(1, window.innerWidth);
     liquid.setViewport({
-      width: Math.max(1, window.innerWidth),
+      width: viewportWidth,
       height: Math.max(1, window.innerHeight),
       scrollX: scrollX(),
       scrollY: scrollY(),
       documentWidth: documentWidth(),
-      documentHeight: documentHeight()
+      documentHeight: documentHeight(),
+      contentLeft: readingLane.left,
+      contentRight: readingLane.right,
+      contentFeather: readingLane.feather,
+      contentOpacity: readingLane.opacity
     });
   }
 
@@ -284,6 +305,7 @@
     if (!renderer || !camera) return;
     var width = Math.max(1, window.innerWidth);
     var height = Math.max(1, window.innerHeight);
+    measureReadingLane();
     renderer.setPixelRatio(Math.min(width <= 520 ? 1.35 : 1.75, window.devicePixelRatio || 1));
     renderer.setSize(width, height, false);
     camera.left = 0;
@@ -328,6 +350,7 @@
     computeWaypoints();
     resizeRenderer();
     applyResponsiveMetrics();
+    reflowCompletedLiquid(previousWaypoints, waypoints);
     var nextTarget = waypoints[targetIndex];
     var nextSource = waypoints[Math.max(0, targetIndex - 1)];
     var nextBottom = waypoints[0];
