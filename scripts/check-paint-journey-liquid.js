@@ -146,6 +146,14 @@ function createFieldHarness(mobile = false) {
   return { THREE, records, renderer, scene, model, field };
 }
 
+function assertApproximateArray(actual, expected, message) {
+  assert.equal(actual.length, expected.length, `${message}: array lengths must match`);
+  expected.forEach((value, index) => {
+    assert.ok(Math.abs(actual[index] - value) < 0.00001,
+      `${message}: index ${index} expected ${value}, received ${actual[index]}`);
+  });
+}
+
 function testOneBoundedSurfaceAndFixedUniformPacket() {
   const harness = createFieldHarness(false);
   const { records, scene, field } = harness;
@@ -171,9 +179,25 @@ function testOneBoundedSurfaceAndFixedUniformPacket() {
     documentWidth: 1280, documentHeight: 1800
   });
   const target = records.targets[0];
+  assertApproximateArray(Array.from(shader.uniforms.uViewport.value), [0, 1000, 1280, 720],
+    'viewport document origin and CSS dimensions must reach the shader');
+  assertApproximateArray(Array.from(shader.uniforms.uDocumentSize.value), [1280, 1800],
+    'document geometry must reach the shader');
+  assert.deepEqual(
+    [scene.children[0].position.x, scene.children[0].position.y, scene.children[0].position.z],
+    [640, 360, 4],
+    'the composite plane must remain centered in the actor camera viewport'
+  );
+  assert.deepEqual(
+    [scene.children[0].scale.x, scene.children[0].scale.y, scene.children[0].scale.z],
+    [1280, 720, 1],
+    'the composite plane must cover the complete actor camera viewport'
+  );
   assert.ok(target.width <= Math.floor(1280 * 0.72) && target.height <= Math.floor(720 * 0.72),
     'desktop internal resolution must stay below one CSS pixel even when renderer DPR is high');
   assert.ok(target.width * target.height <= 900000, 'the private target must respect the global pixel cap');
+  assert.deepEqual(Array.from(shader.uniforms.uTargetSize.value), [target.width, target.height],
+    'actual bounded target dimensions must reach edge-antialiasing uniforms');
 
   field.setViewport({
     width: 5000, height: 3200, scrollX: 0, scrollY: 0,
@@ -190,6 +214,10 @@ function testOneBoundedSurfaceAndFixedUniformPacket() {
     pressure: 0.8,
     palettePhase: 0.62
   });
+  assertApproximateArray(Array.from(shader.uniforms.uEmitterPath.value), [980, 1600, 720, 1540],
+    'the bucket origin and liquid front must reach the emitter path uniform');
+  assertApproximateArray(Array.from(shader.uniforms.uEmitterStyle.value), [1, 0.8, 0.62, 0],
+    'emitter activity, pressure, and pigment phase must reach the shader');
   assert.equal(field.update(1 / 60, 1.2), true, 'a live update must render the private surface');
   assert.equal(records.meshes.length, 2, 'uploading gestures must never create per-gesture meshes');
   assert.equal(records.renderCalls.at(-1).target, target, 'the private scene must render into its bounded target');
@@ -259,6 +287,10 @@ function testShaderContainsTheContinuousLiquidMaterial() {
     'the surface boundary must receive low-frequency organic warping');
   assert.match(fieldSource, /CONTOUR_BANDS\s*=\s*6/,
     'the liquid body must shade six nested contour strata');
+  assert.match(fieldSource, /groundedPigment\s*\(\s*phase\s*-\s*PIGMENT_NEIGHBOR\s*\)/,
+    'contour bands must sample a grounded pigment immediately below the authored phase');
+  assert.match(fieldSource, /groundedPigment\s*\(\s*phase\s*\+\s*PIGMENT_NEIGHBOR\s*\)/,
+    'contour bands must sample a grounded pigment immediately above the authored phase');
   assert.match(fieldSource, /if\s*\(\s*endShape\.w\s*>\s*0\.0001\s*\)/,
     'a zero-reveal gesture must not render a full-width starting blob');
   assert.match(fieldSource, /capillaryEdge/,
