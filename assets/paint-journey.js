@@ -49,6 +49,7 @@
   var stateStarted = 0;
   var previousTimestamp = 0;
   var hiddenAt = 0;
+  var liquidTime = 0;
   var targetIndex = 1;
   var stateFrom = { x: 0, y: 0 };
   var stateTo = { x: 0, y: 0 };
@@ -90,6 +91,13 @@
   var liquidModel = null;
   var liquid = null;
   var staticContourDrawn = false;
+  var actorLayerDisposed = false;
+  var liveLayerDisposed = false;
+  var unloading = false;
+  var loadingContextLost = false;
+  var settledListenersAttached = false;
+  var settledLayoutPending = false;
+  var settledResizeObserver = null;
 
   function setState(nextState, timestamp) {
     state = nextState;
@@ -388,6 +396,58 @@
     layoutFrame = window.requestAnimationFrame(recomputeLayout);
   }
 
+  function recomputeSettledLayout() {
+    settledLayoutPending = false;
+    var previousWaypoints = waypoints.slice();
+    computeWaypoints();
+    resizeRenderer();
+    applyResponsiveMetrics();
+    reflowCompletedLiquid(previousWaypoints, waypoints);
+    if (liquid) liquid.setAmbient(true);
+  }
+
+  function wakeAmbientLiquid() {
+    if (!active || state !== 'complete' || !renderer || !liquid || document.hidden) return;
+    liquid.setAmbient(true);
+    if (!frameRequest) frameRequest = window.requestAnimationFrame(renderAmbientLiquid);
+  }
+
+  function scheduleSettledRedraw() {
+    updateLiquidViewport();
+    wakeAmbientLiquid();
+  }
+
+  function scheduleSettledLayout() {
+    settledLayoutPending = true;
+    wakeAmbientLiquid();
+  }
+
+  function attachSettledListeners() {
+    if (settledListenersAttached) return;
+    settledListenersAttached = true;
+    window.addEventListener('scroll', scheduleSettledRedraw, { passive: true });
+    window.addEventListener('resize', scheduleSettledLayout, { passive: true });
+    window.addEventListener('orientationchange', scheduleSettledLayout, { passive: true });
+    document.addEventListener('toggle', scheduleSettledLayout, true);
+    var journeyContent = document.querySelector('.journey-content');
+    if (typeof window.ResizeObserver === 'function' && journeyContent) {
+      settledResizeObserver = new window.ResizeObserver(scheduleSettledLayout);
+      settledResizeObserver.observe(journeyContent);
+    }
+  }
+
+  function detachSettledListeners() {
+    if (!settledListenersAttached) return;
+    settledListenersAttached = false;
+    window.removeEventListener('scroll', scheduleSettledRedraw);
+    window.removeEventListener('resize', scheduleSettledLayout);
+    window.removeEventListener('orientationchange', scheduleSettledLayout);
+    document.removeEventListener('toggle', scheduleSettledLayout, true);
+    if (settledResizeObserver) settledResizeObserver.disconnect();
+    settledResizeObserver = null;
+    settledLayoutPending = false;
+  }
+
   function disableGuidance() {
     guidanceEnabled = false;
   }
@@ -445,12 +505,17 @@
     if (document.hidden) {
       hiddenAt = now;
       previousTimestamp = 0;
+      if (frameRequest) window.cancelAnimationFrame(frameRequest);
+      frameRequest = 0;
       return;
     }
     if (!hiddenAt) return;
-    stateStarted += now - hiddenAt;
+    if (state !== 'complete') stateStarted += now - hiddenAt;
     hiddenAt = 0;
     previousTimestamp = 0;
+    if (active && renderer && !frameRequest) {
+      frameRequest = window.requestAnimationFrame(state === 'complete' ? renderAmbientLiquid : frame);
+    }
   }
 
   function guideTowardTarget(target, delta) {
@@ -486,16 +551,89 @@
     if (bucketVelocity) bucketVelocity.set(0, 0, 0);
   }
 
-  function configureLandingPath(documentPoint, canvasWidth, mobile, sequence) {
+  function landingGeometry(documentPoint, canvasWidth, mobile, sequence, levelIndex) {
     var sweepDistance = canvasWidth * (mobile ? 0.82 : 0.86);
-    var bend = (targetIndex % 2 === 0 ? -1 : 1) * (mobile ? 34 : 58);
+    var bend = (levelIndex % 2 === 0 ? -1 : 1) * (mobile ? 34 : 58);
+    var from = { x: documentPoint.x, y: documentPoint.y };
+    var to = {
+      x: clamp(from.x - sweepDistance, 28, canvasWidth - 28),
+      y: clamp(documentPoint.y + bend, 28, documentHeight() - 28)
+    };
+    return {
+      from: from,
+      control: {
+        x: mix(from.x, to.x, 0.46),
+        y: clamp(documentPoint.y - bend * 0.55 + ((sequence % 3) - 1) * 16,
+          28, documentHeight() - 28)
+      },
+      to: to,
+      width: clamp(canvasWidth * 0.28, mobile ? 124 : 190, mobile ? 230 : 390)
+    };
+  }
+
+  function configureLandingPath(documentPoint, canvasWidth, mobile, sequence, levelIndex) {
     landingOrigin.x = documentPoint.x;
     landingOrigin.y = documentPoint.y;
-    landingDestination.x = clamp(landingOrigin.x - sweepDistance, 28, canvasWidth - 28);
-    landingDestination.y = clamp(documentPoint.y + bend, 28, documentHeight() - 28);
-    landingControl.x = mix(landingOrigin.x, landingDestination.x, 0.46);
-    landingControl.y = clamp(documentPoint.y - bend * 0.55 + ((sequence % 3) - 1) * 16,
-      28, documentHeight() - 28);
+    var geometry = landingGeometry(landingOrigin, canvasWidth, mobile, sequence, levelIndex);
+    landingControl.x = geometry.control.x;
+    landingControl.y = geometry.control.y;
+    landingDestination.x = geometry.to.x;
+    landingDestination.y = geometry.to.y;
+    return geometry;
+  }
+
+  function findWaypoint(points, name) {
+    for (var index = 0; index < points.length; index += 1) {
+      if (points[index].name === name) return points[index];
+    }
+    return null;
+  }
+
+  function reflowCompletedLiquid(previousWaypoints, nextWaypoints) {
+    if (!liquidModel || typeof liquidModel.getGesture !== 'function') return;
+    var canvasWidth = documentWidth();
+    var mobile = isMobileViewport();
+    var index;
+    for (index = 0; index < nextWaypoints.length; index += 1) {
+      var nextWaypoint = nextWaypoints[index];
+      var previousWaypoint = findWaypoint(previousWaypoints, nextWaypoint.name) || nextWaypoint;
+      var landingGesture = liquidModel.getGesture('landing:' + nextWaypoint.name);
+      if (!landingGesture) continue;
+      var shiftedOrigin = {
+        x: nextWaypoint.x + (landingGesture.from.x - previousWaypoint.x),
+        y: nextWaypoint.y + (landingGesture.from.y - previousWaypoint.y)
+      };
+      var geometry = landingGeometry(shiftedOrigin, canvasWidth, mobile, index, index);
+      liquidModel.reflow(landingGesture.id, geometry);
+    }
+
+    for (index = 1; index < nextWaypoints.length; index += 1) {
+      var nextSource = nextWaypoints[index - 1];
+      var nextTarget = nextWaypoints[index];
+      var previousSource = findWaypoint(previousWaypoints, nextSource.name) || nextSource;
+      var previousTarget = findWaypoint(previousWaypoints, nextTarget.name) || nextTarget;
+      var connectorGesture = liquidModel.getGesture(
+        'connector:' + nextSource.name + ':' + nextTarget.name
+      );
+      if (!connectorGesture) continue;
+      var connectorFrom = {
+        x: nextSource.x + (connectorGesture.from.x - previousSource.x),
+        y: nextSource.y + (connectorGesture.from.y - previousSource.y)
+      };
+      var connectorTo = {
+        x: nextTarget.x + (connectorGesture.to.x - previousTarget.x),
+        y: nextTarget.y + (connectorGesture.to.y - previousTarget.y)
+      };
+      liquidModel.reflow(connectorGesture.id, {
+        from: connectorFrom,
+        control: {
+          x: mix(connectorFrom.x, connectorTo.x, 0.48) - (mobile ? 14 : 24),
+          y: mix(connectorFrom.y, connectorTo.y, 0.5)
+        },
+        to: connectorTo,
+        width: mobile ? 48 : 68
+      });
+    }
   }
 
   function characterPourAmount(progress) {
@@ -523,7 +661,7 @@
     var waypoint = waypoints[landingIndex] || { name: 'bottom' };
     landingId = 'landing:' + waypoint.name;
     landingPalettePhase = (landingSequence * 0.157 + 0.61) % 1;
-    configureLandingPath(documentPoint, canvasWidth, mobile, landingSequence);
+    configureLandingPath(documentPoint, canvasWidth, mobile, landingSequence, landingIndex);
     liquidModel.upsertGesture({
       id: landingId,
       from: { x: landingOrigin.x, y: landingOrigin.y },
@@ -555,7 +693,10 @@
     if (!landingId) ensureLandingGesture(documentPoint);
     syncActivePigmentHue();
     if (landingNeedsRebase && landingId) {
-      configureLandingPath(documentPoint, documentWidth(), isMobileViewport(), landingSequence - 1);
+      var landingIndex = state === 'bottom-paint' ? 0 : targetIndex;
+      configureLandingPath(
+        documentPoint, documentWidth(), isMobileViewport(), landingSequence - 1, landingIndex
+      );
       liquidModel.reflow(landingId, {
         from: { x: landingOrigin.x, y: landingOrigin.y },
         control: { x: landingControl.x, y: landingControl.y },
@@ -816,10 +957,30 @@
     if (state === 'await-target') pauseUntilTargetVisible();
   }
 
+  function settleLiquidLayer() {
+    if (!renderer || !liquid || actorLayerDisposed) return;
+    if (trail && typeof trail.freeze === 'function') trail.freeze();
+    liquid.setEmitter({ active: false, origin: currentPoint, front: currentPoint, pressure: 0,
+      palettePhase: landingPalettePhase });
+    liquid.setAmbient(true);
+    cleanupActorLayer();
+    removeActiveRuntimeListeners();
+    attachSettledListeners();
+    active = true;
+    previousTimestamp = 0;
+    if (!document.hidden && !frameRequest) {
+      frameRequest = window.requestAnimationFrame(renderAmbientLiquid);
+    }
+  }
+
   function finishLoop() {
-    if (state === 'complete' || state === 'cancelled-rest') {
+    if (state === 'complete') {
+      settleLiquidLayer();
+      return;
+    }
+    if (state === 'cancelled-rest') {
       if (trail && typeof trail.freeze === 'function') trail.freeze();
-      cleanupLiveLayer({ preserveStage: true });
+      disposeLiveLayer({ preserveStage: true });
       return;
     }
     active = false;
@@ -828,16 +989,38 @@
     removeRuntimeListeners();
   }
 
+  function renderAmbientLiquid(timestamp) {
+    frameRequest = 0;
+    if (!active || state !== 'complete' || !renderer || !liquid || document.hidden) return;
+    var delta = previousTimestamp ? Math.min(0.05, (timestamp - previousTimestamp) / 1000) : 0;
+    previousTimestamp = timestamp;
+    liquidTime += delta;
+
+    try {
+      if (settledLayoutPending) recomputeSettledLayout();
+      updateLiquidViewport();
+      if (liquid.update(delta, liquidTime)) renderer.render(scene, camera);
+    } catch (error) {
+      failLive();
+      return;
+    }
+
+    if (active && !document.hidden && renderer && liquid) {
+      frameRequest = window.requestAnimationFrame(renderAmbientLiquid);
+    }
+  }
+
   function frame(timestamp) {
     frameRequest = 0;
-    if (!active || !renderer) return;
-    var delta = previousTimestamp ? Math.min(0.05, (timestamp - previousTimestamp) / 1000) : 0.016;
+    if (!active || !renderer || document.hidden) return;
+    var delta = previousTimestamp ? Math.min(0.05, (timestamp - previousTimestamp) / 1000) : 0;
     previousTimestamp = timestamp;
+    liquidTime += delta;
 
     try {
       updateJourney(timestamp, delta);
       updateLiquidViewport();
-      liquid.update(delta, timestamp * 0.001);
+      liquid.update(delta, liquidTime);
       renderer.render(scene, camera);
     } catch (error) {
       failLive();
@@ -860,18 +1043,19 @@
   }
 
   function cancelJourney() {
+    if (state === 'complete' || state === 'cancelled-rest') return;
     disableGuidance();
     if (particles) particles.clear();
     if (!character) {
       cancelledBeforeInitialization = true;
       if (bottomObserver) bottomObserver.disconnect();
       setState('cancelled-rest', window.performance.now());
-      cleanupLiveLayer();
+      disposeLiveLayer();
       discardTrailLayer();
       requestFallback({ staticOnly: true });
       return;
     }
-    if (!character || state === 'complete' || state === 'cancelled-rest') return;
+    if (!character) return;
     if (ladder) ladder.hide();
     stateFrom.x = currentPoint.x;
     stateFrom.y = currentPoint.y;
@@ -884,33 +1068,53 @@
     }
   }
 
-  function removeRuntimeListeners() {
+  function removeActiveRuntimeListeners() {
     detachInputListeners();
     window.removeEventListener('resize', scheduleLayout);
     window.removeEventListener('orientationchange', scheduleLayout);
     document.removeEventListener('toggle', scheduleLayout, true);
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('scroll', resumeIfTargetVisible);
     if (layoutFrame) window.cancelAnimationFrame(layoutFrame);
     layoutFrame = 0;
+  }
+
+  function removeRuntimeListeners() {
+    removeActiveRuntimeListeners();
+    detachSettledListeners();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('pagehide', handlePageHide);
     hiddenAt = 0;
   }
 
-  function cleanupLiveLayer(options) {
+  function cleanupActorLayer() {
+    if (actorLayerDisposed) return;
+    actorLayerDisposed = true;
+    if (ladder) ladder.dispose();
+    if (particles) particles.dispose();
+    if (character) character.dispose();
+    ladder = null;
+    particles = null;
+    character = null;
+    ladderBottom = null;
+    ladderTop = null;
+    bucketOrigin = null;
+    previousBucketOrigin = null;
+    bucketVelocity = null;
+    paintVelocity = null;
+  }
+
+  function disposeLiveLayer(options) {
     options = options || {};
+    if (liveLayerDisposed) return false;
+    liveLayerDisposed = true;
     active = false;
     if (frameRequest) window.cancelAnimationFrame(frameRequest);
     frameRequest = 0;
     removeRuntimeListeners();
     if (liveCanvas) liveCanvas.removeEventListener('webglcontextlost', handleContextLost);
-    if (ladder) ladder.dispose();
-    if (particles) particles.dispose();
-    if (character) character.dispose();
+    cleanupActorLayer();
     if (liquid) liquid.dispose();
     if (renderer) renderer.dispose();
-    ladder = null;
-    particles = null;
-    character = null;
     liquid = null;
     liquidModel = null;
     renderer = null;
@@ -918,6 +1122,7 @@
     camera = null;
     if (!options.preserveStage) setLiveStage(false);
     if (liveCanvas && liveCanvas.parentNode) liveCanvas.parentNode.removeChild(liveCanvas);
+    return true;
   }
 
   function discardTrailLayer() {
@@ -931,10 +1136,11 @@
   }
 
   function failLive() {
-    if (failed) return;
+    if (failed || unloading) return;
     failed = true;
+    if (state === 'loading') loadingContextLost = true;
     if (bottomObserver) bottomObserver.disconnect();
-    cleanupLiveLayer();
+    disposeLiveLayer();
     if (cancelledBeforeInitialization || state === 'cancelled-rest') {
       discardTrailLayer();
       requestFallback({ staticOnly: true });
@@ -949,8 +1155,21 @@
     failLive();
   }
 
+  function handlePageHide() {
+    if (unloading) return;
+    unloading = true;
+    failed = true;
+    if (bottomObserver) bottomObserver.disconnect();
+    disposeLiveLayer();
+    discardTrailLayer();
+  }
+
   function initializeThree(module) {
-    if (cancelledBeforeInitialization || state === 'cancelled-rest') return;
+    if (unloading || loadingContextLost || liveLayerDisposed ||
+        cancelledBeforeInitialization || state === 'cancelled-rest') return;
+    liveLayerDisposed = false;
+    actorLayerDisposed = false;
+    liquidTime = 0;
     THREE = module;
     if (!THREE || !liveCanvas || !trail || typeof PaintJourney.createCharacter !== 'function' ||
         typeof PaintJourney.createLadder !== 'function' || typeof PaintJourney.createParticles !== 'function' ||
@@ -1027,7 +1246,7 @@
     setState('entering', window.performance.now());
     active = true;
     previousTimestamp = 0;
-    frameRequest = window.requestAnimationFrame(frame);
+    if (!document.hidden) frameRequest = window.requestAnimationFrame(frame);
   }
 
   function beginLoading() {
@@ -1042,6 +1261,8 @@
       requestFallback({ staticOnly: reducedMotion });
       return;
     }
+    window.addEventListener('pagehide', handlePageHide);
+    liveCanvas.addEventListener('webglcontextlost', handleContextLost, false);
     if (reducedMotion) {
       drawStaticContourFallback();
       requestFallback({ staticOnly: true, paintOwnedByTrail: true });

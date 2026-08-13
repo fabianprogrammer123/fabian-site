@@ -232,6 +232,12 @@ for text in \
   'createLiquidModel' \
   'createLiquidField' \
   'updateLiquidViewport' \
+  'cleanupActorLayer' \
+  'renderAmbientLiquid' \
+  'attachSettledListeners' \
+  'disposeLiveLayer' \
+  'liquidTime' \
+  'pagehide' \
   'getPourAmount' \
   'PAINT_RATES' \
   "classList.toggle('is-live'" \

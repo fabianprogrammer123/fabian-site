@@ -35,11 +35,11 @@ requirePattern(/state\s*===\s*'bottom-paint'[\s\S]{0,180}character\.setPose\('pa
   'the first bucket swing must blend from the walking pose');
 requirePattern(/cancelledBeforeInitialization/,
   'Escape must cancel a journey while Three.js is still loading');
-requirePattern(/if\s*\(!character\)[\s\S]{0,380}cleanupLiveLayer\(\)[\s\S]{0,180}discardTrailLayer\(\)/,
+requirePattern(/if\s*\(!character\)[\s\S]{0,380}disposeLiveLayer\(\)[\s\S]{0,180}discardTrailLayer\(\)/,
   'cancelling during Three.js loading must remove both empty rendering layers');
 requirePattern(/PaintFinale\.pendingStart[\s\S]{0,220}staticOnly/,
   'a late load failure must not downgrade an already-static cancellation fallback');
-requirePattern(/function\s+finishLoop\s*\([^)]*\)\s*\{[\s\S]{0,500}state\s*===\s*'cancelled-rest'[\s\S]{0,260}cleanupLiveLayer\(\{\s*preserveStage:\s*true\s*\}\)/,
+requirePattern(/function\s+finishLoop\s*\([^)]*\)\s*\{[\s\S]{0,500}state\s*===\s*'cancelled-rest'[\s\S]{0,260}disposeLiveLayer\(\{\s*preserveStage:\s*true\s*\}\)/,
   'a cancelled journey must dispose its WebGL layer after the resting pose');
 requirePattern(/function\s+finishLoop\s*\([^)]*\)\s*\{[\s\S]{0,420}trail\.freeze\(\)/,
   'completed or cancelled journeys must stop persistent trail maintenance');
@@ -49,7 +49,7 @@ requirePattern(/function\s+failLive\s*\([^)]*\)\s*\{[\s\S]{0,520}drawStaticConto
   'a failed WebGL journey must replace residue with the full-page static contour field');
 requirePattern(/function\s+beginLoading[\s\S]{0,1100}if\s*\(reducedMotion\)[\s\S]{0,260}drawStaticContourFallback\(\)[\s\S]{0,180}paintOwnedByTrail:\s*true/,
   'reduced-motion artwork must use the shared contour helper inside the bottom-trigger path');
-requirePattern(/function\s+handleVisibilityChange\s*\([^)]*\)\s*\{[\s\S]{0,520}stateStarted\s*\+=\s*now\s*-\s*hiddenAt/,
+requirePattern(/function\s+handleVisibilityChange\s*\([^)]*\)\s*\{[\s\S]{0,700}stateStarted\s*\+=\s*now\s*-\s*hiddenAt/,
   'returning to a hidden tab must preserve the current animation phase');
 requirePattern(/document\.addEventListener\('visibilitychange',\s*handleVisibilityChange\)/,
   'the live journey must monitor page visibility');
@@ -151,8 +151,18 @@ requirePattern(/state\s*===\s*'paint-swing'[\s\S]{0,220}updateLandingLiquid\(pro
   'each upper surface gesture must lock its pigment before emitting bucket droplets');
 requirePattern(/function\s+updateLiquidViewport\s*\(/,
   'the liquid surface must have one document-to-viewport update path');
-requirePattern(/function\s+frame\s*\([^)]*\)[\s\S]{0,500}updateLiquidViewport\(\)[\s\S]{0,180}liquid\.update\(delta,\s*timestamp\s*\*\s*0\.001\)/,
-  'every live frame must refresh document scroll uniforms before rendering the liquid target');
+requirePattern(/function\s+frame\s*\([^)]*\)[\s\S]{0,600}liquidTime\s*\+=\s*delta[\s\S]{0,220}updateLiquidViewport\(\)[\s\S]{0,180}liquid\.update\(delta,\s*liquidTime\)/,
+  'every live frame must refresh document scroll uniforms and advance only accumulated visible time');
+requirePattern(/function\s+cleanupActorLayer\s*\([^)]*\)[\s\S]{0,700}ladder\.dispose\(\)[\s\S]{0,180}particles\.dispose\(\)[\s\S]{0,180}character\.dispose\(\)/,
+  'completion must have an actor-only disposal path');
+requirePattern(/function\s+settleLiquidLayer\s*\([^)]*\)[\s\S]{0,800}liquid\.setAmbient\(true\)[\s\S]{0,220}cleanupActorLayer\(\)[\s\S]{0,220}attachSettledListeners\(\)/,
+  'completion must preserve the liquid and enter the settled listener lifecycle');
+requirePattern(/function\s+renderAmbientLiquid\s*\([^)]*\)[\s\S]{0,900}liquid\.update\(delta,\s*liquidTime\)[\s\S]{0,120}renderer\.render\(scene,\s*camera\)/,
+  'ambient rendering must honor the liquid field throttle before compositing');
+requirePattern(/function\s+reflowCompletedLiquid\s*\([^)]*\)[\s\S]{0,2400}liquidModel\.getGesture\('landing:'[\s\S]{0,1000}liquidModel\.getGesture\([\s\S]{0,900}'connector:'/,
+  'settled layout changes must reflow stable semantic landings and connectors');
+requirePattern(/window\.addEventListener\('pagehide',\s*handlePageHide\)/,
+  'the retained renderer must be released during page navigation');
 assert.doesNotMatch(source, /LANDING_SEGMENTS|landingPaintStep|landingPathStartStep/,
   'the controller must not retain segmented broad-stroke state');
 assert.doesNotMatch(source, /trail\.(?:flow|veil|whorl|spray)\s*\(/,
@@ -180,6 +190,7 @@ async function testEscapeDuringModuleLoadingUsesAStaticFallback() {
   };
   const liveCanvas = {
     parentNode: { removeChild() { liveCanvasRemoved = true; } },
+    addEventListener() {},
     removeEventListener() {}
   };
   const fallbackCanvas = { style: {} };
@@ -283,7 +294,7 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
     setAttribute() {},
     getBoundingClientRect() { return { top: 1900, height: 100 }; }
   };
-  const liveCanvas = { removeEventListener() {} };
+  const liveCanvas = { addEventListener() {}, removeEventListener() {} };
   const fallbackCanvas = { style: {} };
   const trailCanvas = {};
   const level = { getBoundingClientRect() { return { top: 200, height: 100 }; } };
@@ -412,9 +423,618 @@ function testExactBottomLazilyStartsAnimatedAndReducedMotionPaths() {
   }
 }
 
+async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {}) {
+  const windowListeners = new Map();
+  const documentListeners = new Map();
+  const canvasListeners = new Map();
+  const animationFrames = new Map();
+  const resizeObservers = [];
+  const records = {
+    actorDisposals: 0,
+    ladderDisposals: 0,
+    particleDisposals: 0,
+    liquidDisposals: 0,
+    rendererDisposals: 0,
+    canvasRemovals: 0,
+    trailFreezes: 0,
+    trailDestroys: 0,
+    staticDraws: 0,
+    rendererRenders: 0,
+    liquidAmbient: [],
+    liquidUpdates: [],
+    liquidViewports: [],
+    modelReflows: [],
+    fallbackOptions: null
+  };
+  let now = 100;
+  let nextFrameId = 1;
+  let intersectionCallback = null;
+  const width = mobile ? 390 : 1000;
+  const height = mobile ? 720 : 600;
+  const levelTops = {
+    thoughts: 1600,
+    background: 1300,
+    now: 1000,
+    'why-this-site': 700,
+    portrait: 300
+  };
+
+  function addListener(store, type, callback) {
+    const callbacks = store.get(type) || [];
+    callbacks.push(callback);
+    store.set(type, callbacks);
+  }
+
+  function removeListener(store, type, callback) {
+    const callbacks = store.get(type) || [];
+    store.set(type, callbacks.filter((listener) => listener !== callback));
+  }
+
+  function makeLevel(name) {
+    return {
+      getBoundingClientRect() {
+        return { top: levelTops[name] - window.scrollY, bottom: levelTops[name] - window.scrollY + 100,
+          height: 100 };
+      }
+    };
+  }
+
+  const levels = Object.fromEntries(Object.keys(levelTops).map((name) => [name, makeLevel(name)]));
+  const journeyContent = {};
+  const stage = {
+    classList: { toggle() {} },
+    querySelector() { return null; },
+    setAttribute() {},
+    getBoundingClientRect() {
+      return { top: 1900 - window.scrollY, bottom: 2000 - window.scrollY, height: 100 };
+    }
+  };
+  const liveCanvas = {
+    parentNode: {
+      removeChild() {
+        records.canvasRemovals += 1;
+        liveCanvas.parentNode = null;
+      }
+    },
+    addEventListener(type, callback) { addListener(canvasListeners, type, callback); },
+    removeEventListener(type, callback) { removeListener(canvasListeners, type, callback); }
+  };
+  const fallbackCanvas = { style: {} };
+  const trailCanvas = {};
+  const document = {
+    documentElement: { scrollWidth: width, scrollHeight: 2000, clientWidth: width, clientHeight: height },
+    body: { scrollWidth: width, scrollHeight: 2000 },
+    hidden,
+    getElementById(id) {
+      return {
+        'paint-finale': stage,
+        'paint-finale-canvas': fallbackCanvas,
+        'journey-webgl-layer': liveCanvas,
+        'journey-paint-layer': trailCanvas
+      }[id] || null;
+    },
+    querySelector(selector) {
+      if (selector === '.journey-content') return journeyContent;
+      const match = selector.match(/^\[data-journey-level="([^"]+)"\]$/);
+      return match ? levels[match[1]] : null;
+    },
+    addEventListener(type, callback) { addListener(documentListeners, type, callback); },
+    removeEventListener(type, callback) { removeListener(documentListeners, type, callback); },
+    createElement() { return {}; }
+  };
+
+  class Vector3 {
+    constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    copy(other) { return this.set(other.x, other.y, other.z); }
+    sub(other) { this.x -= other.x; this.y -= other.y; this.z -= other.z; return this; }
+    multiplyScalar(value) { this.x *= value; this.y *= value; this.z *= value; return this; }
+    lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
+    length() { return Math.sqrt(this.lengthSq()); }
+  }
+
+  class Scene {
+    constructor() { this.children = []; }
+    add(object) { this.children.push(object); object.parent = this; }
+    remove(object) { this.children = this.children.filter((child) => child !== object); object.parent = null; }
+    updateMatrixWorld() {}
+  }
+
+  class OrthographicCamera {
+    constructor() {
+      this.position = { set() {} };
+    }
+    lookAt() {}
+    updateProjectionMatrix() {}
+  }
+
+  class WebGLRenderer {
+    setClearColor() {}
+    setPixelRatio() {}
+    setSize() {}
+    render() { records.rendererRenders += 1; }
+    dispose() { records.rendererDisposals += 1; }
+  }
+
+  const THREE = { Vector3, Scene, OrthographicCamera, WebGLRenderer };
+  const gestures = new Map();
+  const liquidModel = {
+    upsertGesture(payload) {
+      gestures.set(payload.id, JSON.parse(JSON.stringify(payload)));
+      return gestures.get(payload.id);
+    },
+    setReveal(id, reveal) {
+      const gesture = gestures.get(id);
+      if (gesture) gesture.reveal = Math.max(gesture.reveal || 0, reveal);
+    },
+    reflow(id, geometry) {
+      const gesture = gestures.get(id);
+      if (!gesture) return null;
+      Object.assign(gesture, JSON.parse(JSON.stringify(geometry)));
+      records.modelReflows.push({ id, geometry: JSON.parse(JSON.stringify(geometry)) });
+      return JSON.parse(JSON.stringify(gesture));
+    },
+    getGesture(id) {
+      const gesture = gestures.get(id);
+      return gesture ? JSON.parse(JSON.stringify(gesture)) : null;
+    }
+  };
+  const liquid = {
+    setViewport(viewport) { records.liquidViewports.push({ ...viewport }); return true; },
+    setEmitter() { return true; },
+    setMobile() {},
+    update(delta, time) { records.liquidUpdates.push({ delta, time }); return true; },
+    setAmbient(value) { records.liquidAmbient.push(value); },
+    dispose() { records.liquidDisposals += 1; }
+  };
+  let characterProgress = 0;
+  let characterPose = '';
+  const character = {
+    paintSpout: {
+      getWorldPosition(output) { output.set(width - (mobile ? 46 : 84), 84, 0); return output; }
+    },
+    setScreenPose() {},
+    setPose(name, progress) { characterPose = name; characterProgress = progress; },
+    getPourAmount() {
+      return characterPose === 'paint-swing' && characterProgress >= 0.25 && characterProgress <= 0.82 ? 1 : 0;
+    },
+    setPaintHue() {},
+    setOpacity() {},
+    update() {},
+    dispose() { records.actorDisposals += 1; }
+  };
+  const ladder = {
+    setMetrics() {}, setSpan() {}, hide() {},
+    dispose() { records.ladderDisposals += 1; }
+  };
+  const particles = {
+    activeCount: 0,
+    setMobile() {}, setHue() {}, emit() {}, burst() {}, update() {}, clear() {},
+    dispose() { records.particleDisposals += 1; }
+  };
+  const trail = {
+    clear() {},
+    drawStaticSpectrum() { records.staticDraws += 1; },
+    freeze() { records.trailFreezes += 1; },
+    destroy() { records.trailDestroys += 1; }
+  };
+  const window = {
+    PaintJourney: {
+      createTrail() { return trail; },
+      loadThree() { return Promise.resolve(THREE); },
+      createLiquidModel() { return liquidModel; },
+      createLiquidField() { return liquid; },
+      createCharacter() { return character; },
+      createLadder() { return ladder; },
+      createParticles() { return particles; }
+    },
+    PaintFinale: { startFallback(options) { records.fallbackOptions = options; } },
+    innerWidth: width,
+    innerHeight: height,
+    devicePixelRatio: 1,
+    scrollX: 0,
+    pageXOffset: 0,
+    scrollY: 2000 - height,
+    pageYOffset: 2000 - height,
+    performance: { now() { return now; } },
+    matchMedia() { return { matches: false }; },
+    scrollTo(options) { this.scrollY = options.top; this.pageYOffset = options.top; },
+    requestAnimationFrame(callback) {
+      const id = nextFrameId++;
+      animationFrames.set(id, callback);
+      return id;
+    },
+    cancelAnimationFrame(id) { animationFrames.delete(id); },
+    addEventListener(type, callback) { addListener(windowListeners, type, callback); },
+    removeEventListener(type, callback) { removeListener(windowListeners, type, callback); },
+    ResizeObserver: class ResizeObserver {
+      constructor(callback) { this.callback = callback; this.disconnected = false; resizeObservers.push(this); }
+      observe(target) { this.target = target; }
+      disconnect() { this.disconnected = true; }
+    },
+    IntersectionObserver: function IntersectionObserver(callback) {
+      this.observe = function observe() { intersectionCallback = callback; };
+      this.disconnect = function disconnect() {};
+    }
+  };
+
+  vm.runInNewContext(source, { window, document });
+  intersectionCallback([{ isIntersecting: true }]);
+  await Promise.resolve();
+  await Promise.resolve();
+
+  function fire(store, type, event = {}) {
+    for (const callback of [...(store.get(type) || [])]) callback({ type, ...event });
+  }
+
+  function step(milliseconds) {
+    now += milliseconds;
+    const pending = [...animationFrames.entries()];
+    assert.ok(pending.length, 'the lifecycle harness expected a queued animation frame');
+    const [id, callback] = pending[0];
+    animationFrames.delete(id);
+    callback(now);
+  }
+
+  function advanceCurrentState() {
+    const duration = {
+      entering: 1350,
+      'bottom-paint': 2350,
+      'deploy-ladder': 1050,
+      'climb-ladder': 1800,
+      'retrieve-ladder': 850,
+      'paint-swing': 1750,
+      vanish: 1050
+    }[window.PaintJourneyState] || 1000;
+    step(duration * 0.52);
+    step(duration * 0.58);
+  }
+
+  function completeJourney() {
+    let guard = 0;
+    while (window.PaintJourneyState !== 'complete' && guard < 24) {
+      advanceCurrentState();
+      guard += 1;
+    }
+    assert.equal(window.PaintJourneyState, 'complete', 'the lifecycle harness must reach the settled state');
+  }
+
+  return {
+    window,
+    document,
+    liveCanvas,
+    records,
+    gestures,
+    animationFrames,
+    resizeObservers,
+    completeJourney,
+    step,
+    setNow(value) { now = value; },
+    shiftLevel(name, amount) {
+      levelTops[name] += amount;
+      document.documentElement.scrollHeight += amount;
+      document.body.scrollHeight += amount;
+    },
+    fireWindow(type, event) { fire(windowListeners, type, event); },
+    fireDocument(type, event) { fire(documentListeners, type, event); },
+    fireCanvas(type, event) { fire(canvasListeners, type, event); },
+    listenerCount(storeName, type) {
+      const store = storeName === 'window' ? windowListeners : documentListeners;
+      return (store.get(type) || []).length;
+    },
+    listeners(storeName, type) {
+      const store = storeName === 'window' ? windowListeners : documentListeners;
+      return [...(store.get(type) || [])];
+    }
+  };
+}
+
+async function testCompletionRetainsOnlyAmbientLiquid() {
+  const harness = await createLiveLifecycleHarness();
+  const staleEscapeListener = harness.listeners('window', 'keydown')[0];
+  harness.completeJourney();
+
+  assert.equal(harness.records.actorDisposals, 1, 'completion must dispose the painter once');
+  assert.equal(harness.records.ladderDisposals, 1, 'completion must dispose the ladder once');
+  assert.equal(harness.records.particleDisposals, 1, 'completion must dispose the droplet system once');
+  assert.equal(harness.records.liquidDisposals, 0, 'completion must retain the procedural liquid field');
+  assert.equal(harness.records.rendererDisposals, 0, 'completion must retain the renderer for ambient liquid');
+  assert.equal(harness.records.canvasRemovals, 0, 'completion must retain the WebGL canvas');
+  assert.deepEqual(harness.records.liquidAmbient, [true], 'completion must enter ambient mode exactly once');
+  assert.equal(harness.records.trailFreezes, 1, 'completion must freeze the small persistent droplet trail');
+  assert.equal(harness.listenerCount('window', 'keydown'), 0,
+    'completion must detach Escape and all active journey input listeners');
+  assert.equal(harness.listenerCount('window', 'scroll'), 1,
+    'completion must install one passive settled scroll listener');
+  assert.equal(harness.listenerCount('window', 'resize'), 1,
+    'completion must replace the active resize listener with one settled listener');
+  assert.equal(harness.listenerCount('document', 'toggle'), 1,
+    'completion must replace the active toggle listener with one settled reflow listener');
+
+  staleEscapeListener({ key: 'Escape' });
+  assert.equal(harness.window.PaintJourneyState, 'complete',
+    'an already-dispatched stale Escape callback must not reclassify a settled journey as loading cancellation');
+  assert.equal(harness.records.liquidDisposals, 0,
+    'a stale Escape callback after completion must leave the retained liquid untouched');
+
+  const rendersBefore = harness.records.rendererRenders;
+  harness.step(50);
+  assert.ok(harness.records.rendererRenders > rendersBefore,
+    'the retained liquid must continue rendering at its bounded ambient cadence');
+}
+
+async function testHiddenAmbientTimePausesWithoutJumping() {
+  const harness = await createLiveLifecycleHarness();
+  harness.completeJourney();
+  harness.step(50);
+  const beforeHide = harness.records.liquidUpdates.at(-1).time;
+
+  harness.document.hidden = true;
+  harness.fireDocument('visibilitychange');
+  assert.equal(harness.animationFrames.size, 0, 'hiding the document must cancel the ambient frame');
+
+  harness.setNow(900000);
+  harness.document.hidden = false;
+  harness.fireDocument('visibilitychange');
+  assert.equal(harness.animationFrames.size, 1, 'returning to the page must schedule one ambient frame');
+  harness.step(0);
+  const afterShow = harness.records.liquidUpdates.at(-1).time;
+  assert.equal(afterShow, beforeHide,
+    'the first resumed ambient frame must preserve shader time instead of jumping across hidden time');
+}
+
+async function testHiddenInitializationWaitsForVisibility() {
+  const harness = await createLiveLifecycleHarness({ hidden: true });
+  assert.equal(harness.animationFrames.size, 0,
+    'initialization in a hidden document must not queue a live rendering frame');
+  assert.equal(harness.records.liquidUpdates.length, 0,
+    'initialization in a hidden document must not advance the liquid phase');
+
+  harness.setNow(500000);
+  harness.document.hidden = false;
+  harness.fireDocument('visibilitychange');
+  assert.equal(harness.animationFrames.size, 1,
+    'the first visible transition must start exactly one journey frame');
+  harness.step(0);
+  assert.equal(harness.records.liquidUpdates.at(-1).time, 0,
+    'the first visible frame after hidden initialization must start at liquid phase zero');
+}
+
+async function testSettledScrollResizeAndDetailsReflow() {
+  const harness = await createLiveLifecycleHarness();
+  harness.completeJourney();
+  const expectedIds = [
+    'landing:bottom', 'landing:thoughts', 'landing:background', 'landing:now',
+    'landing:why-this-site', 'landing:portrait',
+    'connector:bottom:thoughts', 'connector:thoughts:background', 'connector:background:now',
+    'connector:now:why-this-site', 'connector:why-this-site:portrait'
+  ];
+  assert.deepEqual([...harness.gestures.keys()].sort(), expectedIds.slice().sort(),
+    'the completed harness must retain all six semantic landings and five connectors');
+
+  const bottomBeforeNoopReflow = JSON.parse(JSON.stringify(harness.gestures.get('landing:bottom')));
+  harness.fireDocument('toggle');
+  harness.step(20);
+  assert.deepEqual(harness.gestures.get('landing:bottom'), bottomBeforeNoopReflow,
+    'a no-op settled layout pass must not make the bottom contour jump');
+
+  harness.window.scrollY = 280;
+  harness.window.pageYOffset = 280;
+  harness.fireWindow('scroll');
+  harness.step(20);
+  assert.equal(harness.records.liquidViewports.at(-1).scrollY, 280,
+    'settled scroll must immediately align the document-space liquid viewport');
+
+  harness.records.modelReflows.length = 0;
+  harness.shiftLevel('background', 180);
+  harness.fireDocument('toggle');
+  harness.step(20);
+  assert.deepEqual([...new Set(harness.records.modelReflows.map((entry) => entry.id))].sort(),
+    expectedIds.slice().sort(),
+    'details/layout changes must semantically reflow every retained landing and connector');
+
+  harness.records.modelReflows.length = 0;
+  harness.window.innerWidth = 820;
+  harness.fireWindow('resize');
+  harness.step(20);
+  assert.deepEqual([...new Set(harness.records.modelReflows.map((entry) => entry.id))].sort(),
+    expectedIds.slice().sort(),
+    'settled resize must reflow the entire document-space field without recreating gestures');
+}
+
+async function testContextLossFallsBackAndPageHideDisposesIdempotently() {
+  const contextHarness = await createLiveLifecycleHarness();
+  contextHarness.completeJourney();
+  let prevented = false;
+  contextHarness.fireCanvas('webglcontextlost', { preventDefault() { prevented = true; } });
+  assert.equal(prevented, true, 'context loss must prevent the browser default restoration race');
+  assert.equal(contextHarness.records.liquidDisposals, 1, 'context loss must dispose the retained liquid');
+  assert.equal(contextHarness.records.rendererDisposals, 1, 'context loss must dispose the renderer');
+  assert.equal(contextHarness.records.staticDraws, 1,
+    'context loss must replace the live surface with one static contour field');
+  assert.equal(contextHarness.records.fallbackOptions && contextHarness.records.fallbackOptions.paintOwnedByTrail,
+    true, 'context loss must keep legacy fallback paint suppressed');
+
+  const pageHarness = await createLiveLifecycleHarness();
+  pageHarness.completeJourney();
+  pageHarness.fireWindow('pagehide');
+  pageHarness.fireWindow('pagehide');
+  assert.equal(pageHarness.records.actorDisposals, 1, 'pagehide must not double-dispose the actor layer');
+  assert.equal(pageHarness.records.liquidDisposals, 1, 'pagehide must dispose the liquid exactly once');
+  assert.equal(pageHarness.records.rendererDisposals, 1, 'pagehide must dispose the renderer exactly once');
+  assert.equal(pageHarness.records.canvasRemovals, 1, 'pagehide must remove the WebGL canvas exactly once');
+  assert.equal(pageHarness.records.trailDestroys, 1, 'pagehide must release the document-sized trail once');
+  assert.equal(pageHarness.records.fallbackOptions, null,
+    'pagehide teardown must not start replacement artwork while navigating away');
+}
+
+async function testPageHideDuringLoadingIgnoresLateThreeResult() {
+  for (const settleAs of ['resolve', 'reject']) {
+    const listeners = new Map();
+    let fallbackCalls = 0;
+    let createCharacterCalls = 0;
+    let liveCanvasRemoved = 0;
+    let trailCanvasRemoved = 0;
+    let settleThree;
+    let rejectThree;
+    const threeRequest = new Promise((resolve, reject) => {
+      settleThree = resolve;
+      rejectThree = reject;
+    });
+    const stage = {
+      classList: { toggle() {} }, querySelector() { return null; }, setAttribute() {},
+      getBoundingClientRect() { return { top: 1900, height: 100 }; }
+    };
+    const liveCanvas = {
+      parentNode: { removeChild() { liveCanvasRemoved += 1; liveCanvas.parentNode = null; } },
+      addEventListener() {},
+      removeEventListener() {}
+    };
+    const trailCanvas = {
+      width: 1000, height: 2000,
+      parentNode: { removeChild() { trailCanvasRemoved += 1; trailCanvas.parentNode = null; } }
+    };
+    const document = {
+      documentElement: { scrollWidth: 1000, scrollHeight: 2000, clientWidth: 1000, clientHeight: 600 },
+      body: { scrollWidth: 1000, scrollHeight: 2000 },
+      hidden: false,
+      getElementById(id) {
+        return {
+          'paint-finale': stage,
+          'paint-finale-canvas': { style: {} },
+          'journey-webgl-layer': liveCanvas,
+          'journey-paint-layer': trailCanvas
+        }[id] || null;
+      },
+      querySelector() { return { getBoundingClientRect() { return { top: 200, height: 100 }; } }; },
+      addEventListener() {}, removeEventListener() {}
+    };
+    const window = {
+      PaintJourney: {
+        createTrail() { return { destroy() {}, freeze() {} }; },
+        loadThree() { return threeRequest; },
+        createCharacter() { createCharacterCalls += 1; return {}; }
+      },
+      PaintFinale: { startFallback() { fallbackCalls += 1; } },
+      innerWidth: 1000, innerHeight: 600, scrollX: 0, pageXOffset: 0, scrollY: 1400, pageYOffset: 1400,
+      performance: { now() { return 100; } },
+      matchMedia() { return { matches: false }; },
+      addEventListener(type, callback) {
+        const callbacks = listeners.get(type) || [];
+        callbacks.push(callback);
+        listeners.set(type, callbacks);
+      },
+      removeEventListener(type, callback) {
+        const callbacks = listeners.get(type) || [];
+        listeners.set(type, callbacks.filter((listener) => listener !== callback));
+      },
+      IntersectionObserver: function IntersectionObserver(callback) {
+        this.observe = function observe() { callback([{ isIntersecting: true }]); };
+        this.disconnect = function disconnect() {};
+      }
+    };
+
+    vm.runInNewContext(source, { window, document });
+    assert.equal(window.PaintJourneyState, 'loading', 'the pagehide race harness must pause during module loading');
+    for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide' });
+    if (settleAs === 'resolve') settleThree({ WebGLRenderer: function WebGLRenderer() {} });
+    else rejectThree(new Error('late CDN rejection'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(createCharacterCalls, 0,
+      'a late Three.js resolution after pagehide must not initialize the actor layer');
+    assert.equal(fallbackCalls, 0,
+      'a late Three.js rejection after pagehide must not start artwork during navigation');
+    assert.equal(liveCanvasRemoved, 1, 'pagehide during loading must remove the live canvas once');
+    assert.equal(trailCanvasRemoved, 1, 'pagehide during loading must remove the trail canvas once');
+  }
+}
+
+async function testContextLossDuringLoadingUsesOneStaticFallback() {
+  const listeners = new Map();
+  let fallbackOptions = null;
+  let drawStaticCalls = 0;
+  let settleThree;
+  const stage = {
+    classList: { toggle() {} }, querySelector() { return null; }, setAttribute() {},
+    getBoundingClientRect() { return { top: 1900, height: 100 }; }
+  };
+  const liveCanvas = {
+    parentNode: { removeChild() { liveCanvas.parentNode = null; } },
+    addEventListener(type, callback) {
+      const callbacks = listeners.get(type) || [];
+      callbacks.push(callback);
+      listeners.set(type, callbacks);
+    },
+    removeEventListener() {}
+  };
+  const document = {
+    documentElement: { scrollWidth: 1000, scrollHeight: 2000, clientWidth: 1000, clientHeight: 600 },
+    body: { scrollWidth: 1000, scrollHeight: 2000 }, hidden: false,
+    getElementById(id) {
+      return {
+        'paint-finale': stage,
+        'paint-finale-canvas': { style: {} },
+        'journey-webgl-layer': liveCanvas,
+        'journey-paint-layer': { parentNode: { removeChild() {} } }
+      }[id] || null;
+    },
+    querySelector() { return { getBoundingClientRect() { return { top: 200, height: 100 }; } }; },
+    addEventListener() {}, removeEventListener() {}
+  };
+  const window = {
+    PaintJourney: {
+      createTrail() {
+        return { clear() {}, drawStaticSpectrum() { drawStaticCalls += 1; }, freeze() {}, destroy() {} };
+      },
+      loadThree() { return new Promise((resolve) => { settleThree = resolve; }); }
+    },
+    PaintFinale: { startFallback(options) { fallbackOptions = options; } },
+    innerWidth: 1000, innerHeight: 600, scrollX: 0, pageXOffset: 0, scrollY: 1400, pageYOffset: 1400,
+    performance: { now() { return 100; } }, matchMedia() { return { matches: false }; },
+    addEventListener(type, callback) {
+      const callbacks = listeners.get(type) || [];
+      callbacks.push(callback);
+      listeners.set(type, callbacks);
+    },
+    removeEventListener(type, callback) {
+      const callbacks = listeners.get(type) || [];
+      listeners.set(type, callbacks.filter((listener) => listener !== callback));
+    },
+    IntersectionObserver: function IntersectionObserver(callback) {
+      this.observe = function observe() { callback([{ isIntersecting: true }]); };
+      this.disconnect = function disconnect() {};
+    }
+  };
+
+  vm.runInNewContext(source, { window, document });
+  let prevented = false;
+  for (const callback of listeners.get('webglcontextlost') || []) {
+    callback({ preventDefault() { prevented = true; } });
+  }
+  assert.equal(prevented, true, 'the loading context-loss test must invoke the live loss handler');
+  assert.equal(drawStaticCalls, 1, 'context loss during loading must draw one static contour fallback');
+  assert.equal(fallbackOptions && fallbackOptions.paintOwnedByTrail, true,
+    'context loss during loading must suppress legacy paint under the shared static field');
+
+  settleThree({ WebGLRenderer: function WebGLRenderer() {} });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(window.PaintJourneyState, 'loading',
+    'a late module result after loading-time context loss must not restart the live journey');
+}
+
 (async function runBehaviorChecks() {
   testExactBottomLazilyStartsAnimatedAndReducedMotionPaths();
   await testEscapeDuringModuleLoadingUsesAStaticFallback();
+  await testCompletionRetainsOnlyAmbientLiquid();
+  await testHiddenAmbientTimePausesWithoutJumping();
+  await testHiddenInitializationWaitsForVisibility();
+  await testSettledScrollResizeAndDetailsReflow();
+  await testContextLossFallsBackAndPageHideDisposesIdempotently();
+  await testPageHideDuringLoadingIgnoresLateThreeResult();
+  await testContextLossDuringLoadingUsesOneStaticFallback();
   console.log('PASS: paint journey orchestrator contract');
 }()).catch((error) => {
   console.error(error);
