@@ -89,6 +89,7 @@
   var paintVelocity = null;
   var liquidModel = null;
   var liquid = null;
+  var staticContourDrawn = false;
 
   function setState(nextState, timestamp) {
     state = nextState;
@@ -226,6 +227,15 @@
       getAnchors: measureWaypoints
     });
     computeWaypoints();
+  }
+
+  function drawStaticContourFallback() {
+    if (staticContourDrawn || !trail) return false;
+    trail.clear();
+    trail.drawStaticSpectrum(waypoints);
+    if (typeof trail.freeze === 'function') trail.freeze();
+    staticContourDrawn = true;
+    return true;
   }
 
   function targetIsVisible(index) {
@@ -930,8 +940,8 @@
       requestFallback({ staticOnly: true });
       return;
     }
-    if (trail && typeof trail.freeze === 'function') trail.freeze();
-    requestFallback();
+    drawStaticContourFallback();
+    requestFallback({ staticOnly: true, paintOwnedByTrail: true });
   }
 
   function handleContextLost(event) {
@@ -1033,9 +1043,8 @@
       return;
     }
     if (reducedMotion) {
-      trail.drawStaticSpectrum(waypoints);
-      if (typeof trail.freeze === 'function') trail.freeze();
-      requestFallback({ staticOnly: true });
+      drawStaticContourFallback();
+      requestFallback({ staticOnly: true, paintOwnedByTrail: true });
       setState('complete', window.performance.now());
       return;
     }

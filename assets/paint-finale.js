@@ -37,6 +37,7 @@
   let resizeFrame = 0;
   let fallbackRequested = false;
   let staticMode = false;
+  let paintOwnedByTrail = false;
 
   function clamp(value, minimum = 0, maximum = 1) {
     return Math.min(maximum, Math.max(minimum, value));
@@ -314,7 +315,7 @@
     started = true;
     animationComplete = true;
     setWalkerState(timeline.settleEnd);
-    renderPaint(1);
+    if (!paintOwnedByTrail) renderPaint(1);
     stage.classList.add('is-complete');
   }
 
@@ -337,15 +338,21 @@
     });
   }
 
-  PaintFinale.startFallback = function startFallback({ staticOnly = false } = {}) {
+  PaintFinale.startFallback = function startFallback({ staticOnly = false, paintOwnedByTrail: ownsPaint = false } = {}) {
     if (fallbackRequested) return;
     fallbackRequested = true;
     staticMode = staticOnly || reducedMotion;
+    paintOwnedByTrail = Boolean(ownsPaint);
     stage.classList.add('is-enhanced');
-    sizeCanvas();
-    window.addEventListener('resize', handleResize, { passive: true });
+    if (paintOwnedByTrail) {
+      canvas.style.visibility = 'hidden';
+    } else {
+      sizeCanvas();
+      window.addEventListener('resize', handleResize, { passive: true });
+    }
 
     if (staticMode) {
+      if (paintOwnedByTrail) setWalkerState(timeline.settleEnd);
       showReducedMotionState();
       return;
     }

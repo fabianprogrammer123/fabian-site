@@ -43,10 +43,12 @@ requirePattern(/function\s+finishLoop\s*\([^)]*\)\s*\{[\s\S]{0,500}state\s*===\s
   'a cancelled journey must dispose its WebGL layer after the resting pose');
 requirePattern(/function\s+finishLoop\s*\([^)]*\)\s*\{[\s\S]{0,420}trail\.freeze\(\)/,
   'completed or cancelled journeys must stop persistent trail maintenance');
-requirePattern(/function\s+failLive\s*\([^)]*\)\s*\{[\s\S]{0,360}trail\.freeze\(\)/,
-  'a failed WebGL journey must stop trail maintenance before falling back');
-requirePattern(/function\s+beginLoading[\s\S]{0,900}if\s*\(reducedMotion\)[\s\S]{0,260}drawStaticSpectrum\(waypoints\)[\s\S]{0,160}trail\.freeze\(\)/,
-  'reduced-motion artwork must be created inside the shared bottom-trigger path and become inert');
+requirePattern(/function\s+drawStaticContourFallback\s*\([^)]*\)\s*\{[\s\S]{0,420}trail\.clear\(\)[\s\S]{0,220}trail\.drawStaticSpectrum\(waypoints\)[\s\S]{0,180}trail\.freeze\(\)/,
+  'one idempotent fallback helper must clear residue, draw the contour field, and freeze it');
+requirePattern(/function\s+failLive\s*\([^)]*\)\s*\{[\s\S]{0,520}drawStaticContourFallback\(\)[\s\S]{0,180}paintOwnedByTrail:\s*true/,
+  'a failed WebGL journey must replace residue with the full-page static contour field');
+requirePattern(/function\s+beginLoading[\s\S]{0,1100}if\s*\(reducedMotion\)[\s\S]{0,260}drawStaticContourFallback\(\)[\s\S]{0,180}paintOwnedByTrail:\s*true/,
+  'reduced-motion artwork must use the shared contour helper inside the bottom-trigger path');
 requirePattern(/function\s+handleVisibilityChange\s*\([^)]*\)\s*\{[\s\S]{0,520}stateStarted\s*\+=\s*now\s*-\s*hiddenAt/,
   'returning to a hidden tab must preserve the current animation phase');
 requirePattern(/document\.addEventListener\('visibilitychange',\s*handleVisibilityChange\)/,
@@ -270,6 +272,7 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
   let createTrailCalls = 0;
   let loadThreeCalls = 0;
   let drawStaticCalls = 0;
+  let clearCalls = 0;
   let freezeCalls = 0;
   let fallbackOptions = null;
   let createLiquidModelCalls = 0;
@@ -301,6 +304,7 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
     removeEventListener() {}
   };
   const trail = {
+    clear() { clearCalls += 1; },
     drawStaticSpectrum() { drawStaticCalls += 1; },
     freeze() { freezeCalls += 1; }
   };
@@ -355,6 +359,7 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
         createLiquidModelCalls,
         createLiquidFieldCalls,
         loadThreeCalls,
+        clearCalls,
         drawStaticCalls,
         freezeCalls,
         fallbackOptions
@@ -371,6 +376,7 @@ function testExactBottomLazilyStartsAnimatedAndReducedMotionPaths() {
       createLiquidModelCalls: 0,
       createLiquidFieldCalls: 0,
       loadThreeCalls: 0,
+      clearCalls: 0,
       drawStaticCalls: 0,
       freezeCalls: 0,
       fallbackOptions: null
@@ -393,10 +399,13 @@ function testExactBottomLazilyStartsAnimatedAndReducedMotionPaths() {
       'the liquid render target must stay unconstructed until the lazily loaded Three.js runtime resolves');
     if (reduced) {
       assert.equal(counts.loadThreeCalls, 0, 'reduced motion must never load the 3D runtime');
+      assert.equal(counts.clearCalls, 1, 'the static contour path must clear prior paint exactly once');
       assert.equal(counts.drawStaticCalls, 1, 'reduced motion must draw its rich static field only at bottom');
       assert.equal(counts.freezeCalls, 1, 'the reduced-motion field must become inert immediately');
       assert.equal(counts.fallbackOptions && counts.fallbackOptions.staticOnly, true,
         'reduced motion must request only a static finale at the shared bottom trigger');
+      assert.equal(counts.fallbackOptions && counts.fallbackOptions.paintOwnedByTrail, true,
+        'the legacy finale must know that the full-page contour trail owns the paint');
     } else {
       assert.equal(counts.loadThreeCalls, 1, 'normal motion must start one Three.js load at bottom');
     }

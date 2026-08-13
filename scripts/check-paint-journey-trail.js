@@ -35,7 +35,7 @@ function createHarness(options = {}) {
     return {
       save() { record.push(['save']); },
       restore() { record.push(['restore']); },
-      beginPath() {},
+      beginPath() { record.push(['beginPath']); },
       rect(...args) { record.push(['rect', ...args]); },
       clip() { record.push(['clip']); },
       clearRect(...args) { record.push(['clearRect', ...args]); },
@@ -60,7 +60,11 @@ function createHarness(options = {}) {
       set globalCompositeOperation(value) { record.push(['composite', value]); },
       set globalAlpha(value) { record.push(['globalAlpha', value]); },
       set lineCap(value) { record.push(['lineCap', value]); },
-      set lineJoin(value) { record.push(['lineJoin', value]); }
+      set lineJoin(value) { record.push(['lineJoin', value]); },
+      set shadowColor(value) { record.push(['shadowColor', value]); },
+      set shadowBlur(value) { record.push(['shadowBlur', value]); },
+      set shadowOffsetX(value) { record.push(['shadowOffsetX', value]); },
+      set shadowOffsetY(value) { record.push(['shadowOffsetY', value]); }
     };
   }
 
@@ -263,20 +267,81 @@ function testSameSizeResizeKeepsTheExistingBackingStore() {
     'same-size resize must not allocate and copy a document-sized temporary canvas');
 }
 
-function testStaticSpectrumFlowsThroughEverySemanticBand() {
+function testContourFieldUsesOneOpaqueNestedSurface() {
   const harness = createHarness();
   harness.operations.length = 0;
 
-  harness.trail.drawStaticSpectrum([{ y: 120 }, { y: 560 }, { y: 1040 }, { y: 1660 }]);
+  assert.equal(typeof harness.trail.contourField, 'function',
+    'trail must expose a coherent still contour-field primitive');
+  harness.trail.contourField({
+    from: { x: 980, y: 400 },
+    to: { x: 80, y: 460 },
+    width: 280,
+    hue: 228,
+    seed: 3,
+    layers: 6
+  });
+
+  const clips = harness.operations.filter((operation) => operation[0] === 'clip');
+  const curves = harness.operations.filter((operation) => operation[0] === 'bezierCurveTo');
+  const strokes = harness.operations.filter((operation) => operation[0] === 'stroke');
+  const widths = harness.operations.filter((operation) => operation[0] === 'lineWidth')
+    .map((operation) => operation[1]);
+  const colors = harness.operations.filter((operation) => operation[0] === 'strokeStyle')
+    .map((operation) => String(operation[1]));
+  const composites = harness.operations.filter((operation) => operation[0] === 'composite')
+    .map((operation) => operation[1]);
+  const shadowBlur = harness.operations.filter((operation) => operation[0] === 'shadowBlur')
+    .map((operation) => operation[1]);
+
+  assert.equal(clips.length, 1,
+    'one complete contour surface must share one content-protection clip');
+  assert.equal(curves.length, 1,
+    'all nested strata must reuse one stable cubic centerline');
+  assert.equal(strokes.length, 8,
+    'one outer shadow, six pigment strata, and one restrained highlight must form the surface');
+  assert.ok(widths.slice(1, 7).every((value, index, values) => index === 0 || value < values[index - 1]),
+    'the six opaque pigment strata must descend cleanly from broad to narrow');
+  assert.ok(colors.every((color) => color.startsWith('rgb(') && !color.startsWith('rgba(')),
+    'the still field must use opaque grounded RGB pigments instead of translucent accumulation');
+  assert.ok(new Set(colors.slice(1, 7)).size >= 5,
+    'neighboring contour strata must carry materially distinct pigments');
+  assert.ok(shadowBlur.some((value) => value > 0),
+    'the outer contour must receive one dimensional wet shadow');
+  assert.ok(widths.at(-1) <= 10,
+    'the pearlescent highlight must stay narrow and restrained');
+  assert.ok(!composites.includes('multiply'),
+    'the coherent fallback body must not compound overlapping multiply strokes');
+}
+
+function testStaticSpectrumUsesOneFieldPerSemanticBandAndConnector() {
+  const harness = createHarness();
+  harness.operations.length = 0;
+
+  harness.trail.drawStaticSpectrum([
+    { y: 120 }, { y: 430 }, { y: 760 },
+    { y: 1090 }, { y: 1420 }, { y: 1750 }
+  ]);
 
   const broadStrokes = harness.operations.filter((operation) =>
     operation[0] === 'lineWidth' && operation[1] >= 110
   );
   const cubicPaths = harness.operations.filter((operation) => operation[0] === 'bezierCurveTo');
-  assert.ok(broadStrokes.length >= 4,
+  const clips = harness.operations.filter((operation) => operation[0] === 'clip');
+  assert.ok(broadStrokes.length >= 6,
     'the reduced-motion composition must wash broad pigment through every semantic page band');
-  assert.ok(cubicPaths.length >= 12,
-    'the static spectrum must use layered fluid paths instead of a narrow alternating edge ribbon');
+  assert.equal(cubicPaths.length, 11,
+    'six semantic bands and five adjacent connectors must each use one stable cubic field');
+  assert.equal(clips.length, 11,
+    'every bounded field must use exactly one protection pass');
+
+  const staticStart = source.indexOf('function drawStaticSpectrum');
+  const staticEnd = source.indexOf('function clear', staticStart);
+  const staticBody = source.slice(staticStart, staticEnd);
+  assert.match(staticBody, /contourField\s*\(/,
+    'the still spectrum must be composed from coherent contour surfaces');
+  assert.doesNotMatch(staticBody, /\bflow\s*\(/,
+    'the still spectrum must not recreate translucent capsule accumulation');
 }
 
 function testScrollRefreshesExclusionsOncePerFrame() {
@@ -498,7 +563,8 @@ testStampsReuseExclusionsUntilResize();
 testStampBatchSharesOneProtectionPass();
 testResizeCanShrinkPastTheOldCanvasWidth();
 testSameSizeResizeKeepsTheExistingBackingStore();
-testStaticSpectrumFlowsThroughEverySemanticBand();
+testContourFieldUsesOneOpaqueNestedSurface();
+testStaticSpectrumUsesOneFieldPerSemanticBandAndConnector();
 testScrollRefreshesExclusionsOncePerFrame();
 testContentResizeRefreshesExclusions();
 testDetailsToggleRefreshesExclusions();

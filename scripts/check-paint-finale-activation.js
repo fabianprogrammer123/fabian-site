@@ -20,5 +20,11 @@ assert.match(style,
 assert.match(fallback,
   /function\s+startFallback[\s\S]{0,360}stage\.classList\.add\('is-enhanced'\)/,
   'fallback activation must own the class that reveals its previously dormant artwork');
+assert.match(fallback,
+  /paintOwnedByTrail[\s\S]{0,220}canvas\.style\.visibility\s*=\s*['"]hidden['"]/,
+  'a full-page contour fallback must suppress the legacy finale paint canvas');
+assert.match(fallback,
+  /if\s*\(paintOwnedByTrail\)[\s\S]{0,120}setWalkerState\(timeline\.settleEnd\)/,
+  'the legacy fallback may retain only its simple settled character when the trail owns paint');
 
 console.log('PASS: paint finale activation contract');

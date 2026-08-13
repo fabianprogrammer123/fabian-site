@@ -43,6 +43,17 @@
     return 'rgba(' + red + ', ' + green + ', ' + blue + ', ' + Math.max(0, Math.min(1, Number(alpha) || 0)) + ')';
   }
 
+  function rgb(value, lift) {
+    var color = pigmentRgb(value);
+    var amount = Math.max(-1, Math.min(1, Number(lift) || 0));
+    var target = amount >= 0 ? 255 : 24;
+    var mix = Math.abs(amount);
+    return 'rgb(' +
+      Math.round(color.r + (target - color.r) * mix) + ', ' +
+      Math.round(color.g + (target - color.g) * mix) + ', ' +
+      Math.round(color.b + (target - color.b) * mix) + ')';
+  }
+
   PaintJourney.pigmentRgb = PaintJourney.pigmentRgb || pigmentRgb;
 
   function documentSize() {
@@ -654,6 +665,81 @@
       });
     }
 
+    function contourField(options) {
+      if (destroyed) return;
+      options = options || {};
+      var from = options.from;
+      var to = options.to;
+      if (!from || !to || !Number.isFinite(from.x) || !Number.isFinite(from.y) ||
+          !Number.isFinite(to.x) || !Number.isFinite(to.y)) return;
+
+      var fromX = from.x - originX;
+      var fromY = from.y - originY;
+      var toX = to.x - originX;
+      var toY = to.y - originY;
+      var deltaX = toX - fromX;
+      var deltaY = toY - fromY;
+      var distance = Math.max(1, Math.hypot(deltaX, deltaY));
+      var normalX = -deltaY / distance;
+      var normalY = deltaX / distance;
+      var surfaceWidth = Math.max(18, Math.min(420, Number(options.width) || 180));
+      var hue = Number.isFinite(Number(options.hue)) ? Number(options.hue) : 0;
+      var seedBase = Number.isFinite(Number(options.seed)) ? Number(options.seed) : pointSeed(from, hue + to.y);
+      var layerCount = Math.max(3, Math.min(8, Math.round(Number(options.layers) || 6)));
+      var bend = (seeded(seedBase + 3.7) - 0.5) * Math.min(surfaceWidth * 0.72, distance * 0.2);
+      var controlOne = {
+        x: fromX + deltaX * 0.28 + normalX * bend,
+        y: fromY + deltaY * 0.28 + normalY * bend
+      };
+      var controlTwo = {
+        x: fromX + deltaX * 0.7 - normalX * bend * 0.64,
+        y: fromY + deltaY * 0.7 - normalY * bend * 0.64
+      };
+      var hueOffsets = [-20, -11, -3, 6, 14, 23, 31, 39];
+      var tonalLifts = [-0.18, -0.07, 0.04, 0.14, -0.01, 0.28, 0.08, 0.34];
+
+      withContentProtection(function () {
+        context.save();
+        context.globalCompositeOperation = 'source-over';
+        context.globalAlpha = 1;
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.beginPath();
+        context.moveTo(fromX, fromY);
+        context.bezierCurveTo(
+          controlOne.x, controlOne.y,
+          controlTwo.x, controlTwo.y,
+          toX, toY
+        );
+
+        context.shadowColor = rgba(hue - 16, 0.42, -0.5);
+        context.shadowBlur = Math.max(5, Math.min(24, surfaceWidth * 0.07));
+        context.shadowOffsetX = normalX * Math.min(8, surfaceWidth * 0.025);
+        context.shadowOffsetY = Math.max(2, Math.abs(normalY) * Math.min(9, surfaceWidth * 0.03));
+        context.strokeStyle = rgb(hue - 16, -0.34);
+        context.lineWidth = surfaceWidth * 1.06;
+        context.stroke();
+
+        context.shadowColor = 'rgba(0, 0, 0, 0)';
+        context.shadowBlur = 0;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
+        for (var layer = 0; layer < layerCount; layer += 1) {
+          var layerProgress = layerCount === 1 ? 0 : layer / (layerCount - 1);
+          context.strokeStyle = rgb(hue + hueOffsets[layer], tonalLifts[layer]);
+          context.lineWidth = surfaceWidth * (0.94 - layerProgress * 0.7);
+          context.globalAlpha = 1;
+          context.stroke();
+        }
+
+        context.strokeStyle = rgb(hue + 28, 0.68);
+        context.lineWidth = Math.max(2, Math.min(10, surfaceWidth * 0.028));
+        context.globalAlpha = 0.58;
+        context.stroke();
+        context.restore();
+      });
+    }
+
     function edgeLanePoint(point, index) {
       var size = documentSize();
       var x = index % 2 ? size.width - 28 : 28;
@@ -682,7 +768,7 @@
       for (var band = 0; band < lanePoints.length; band += 1) {
         var from = lanePoints[band];
         var hue = 360 * (band / Math.max(1, lanePoints.length));
-        flow({
+        contourField({
           from: { x: size.width + 12, y: from.y },
           to: {
             x: size.width * (band % 2 ? 0.07 : 0.13),
@@ -690,17 +776,17 @@
           },
           hue: hue,
           width: bandWidth,
-          progress: 1,
-          seed: band + 19
+          seed: band + 19,
+          layers: 6
         });
         if (band > 0) {
-          flow({
+          contourField({
             from: lanePoints[band - 1],
             to: from,
             hue: hue - 28,
             width: connectorWidth,
-            progress: 1,
-            seed: band + 101
+            seed: band + 101,
+            layers: 6
           });
         }
       }
@@ -845,6 +931,7 @@
       impact: impact,
       veil: veil,
       flow: flow,
+      contourField: contourField,
       drawStaticSpectrum: drawStaticSpectrum,
       freeze: freeze,
       destroy: destroy
