@@ -173,16 +173,21 @@ function testOneBoundedSurfaceAndFixedUniformPacket() {
     'twelve gestures must use one fixed vec4 endpoint/shape array');
   assert.equal(shader.uniforms.uGestureStyle.value.length, 48,
     'twelve gestures must use one fixed vec4 palette/style array');
+  assert.equal(shader.uniforms.uContentRect.value.length, 4,
+    'the liquid field must receive one bounded reading-lane uniform');
 
   field.setViewport({
     width: 1280, height: 720, scrollX: 0, scrollY: 1000,
-    documentWidth: 1280, documentHeight: 1800
+    documentWidth: 1280, documentHeight: 1800,
+    contentLeft: 290, contentRight: 990, contentFeather: 92
   });
   const target = records.targets[0];
   assertApproximateArray(Array.from(shader.uniforms.uViewport.value), [0, 1000, 1280, 720],
     'viewport document origin and CSS dimensions must reach the shader');
   assertApproximateArray(Array.from(shader.uniforms.uDocumentSize.value), [1280, 1800],
     'document geometry must reach the shader');
+  assertApproximateArray(Array.from(shader.uniforms.uContentRect.value), [290, 990, 92, 0.58],
+    'the reading lane must reach the shader with a restrained minimum opacity');
   assert.deepEqual(
     [scene.children[0].position.x, scene.children[0].position.y, scene.children[0].position.z],
     [640, 360, 4],
@@ -366,24 +371,32 @@ function testShaderContainsTheContinuousLiquidMaterial() {
     'gestures must merge with a polynomial smooth-min instead of exposing capsule overlaps');
   assert.match(fieldSource, /domainWarp\s*\(/,
     'the surface boundary must receive low-frequency organic warping');
-  assert.match(fieldSource, /CONTOUR_BANDS\s*=\s*6/,
-    'the liquid body must shade six nested contour strata');
-  assert.match(fieldSource, /groundedPigment\s*\(\s*phase\s*-\s*PIGMENT_NEIGHBOR\s*\)/,
-    'contour bands must sample a grounded pigment immediately below the authored phase');
-  assert.match(fieldSource, /groundedPigment\s*\(\s*phase\s*\+\s*PIGMENT_NEIGHBOR\s*\)/,
-    'contour bands must sample a grounded pigment immediately above the authored phase');
+  assert.match(fieldSource, /quadraticDistanceSample\s*\(/,
+    'the field must retain closest-path position so pigment can visibly travel along the pour');
+  assert.match(fieldSource, /spreadRamp[\s\S]{0,260}localWidth/,
+    'each landing must widen organically from a narrow bucket neck instead of forming a giant capsule');
+  assert.match(fieldSource, /CONTOUR_BANDS\s*=\s*12/,
+    'the liquid body must use twelve narrow marbled contour strata');
+  assert.match(fieldSource, /nearestTravel[\s\S]{0,400}uTime/,
+    'internal pigment motion must advance along the authored path over time');
+  assert.match(fieldSource, /fwidth\s*\(/,
+    'contour transitions must use derivative antialiasing instead of hard posterized edges');
+  assert.match(fieldSource, /surfaceNormal/,
+    'the wet surface must derive a stable light-facing normal from its closest centerline');
+  assert.match(fieldSource, /wetSpecular/,
+    'the liquid must carry a narrow directional wet highlight');
+  assert.match(fieldSource, /fresnelEdge/,
+    'the liquid must carry a bright wet meniscus at its outer edge');
+  assert.match(fieldSource, /darkWetEdge/,
+    'the liquid must ground its volume with a dark capillary boundary');
+  assert.match(fieldSource, /readingLane/,
+    'the field must organically soften beneath the central reading column');
   assert.match(fieldSource, /if\s*\(\s*endShape\.w\s*>\s*0\.0001\s*\)/,
     'a zero-reveal gesture must not render a full-width starting blob');
   assert.match(fieldSource, /emitterDistance\s*=\s*lineSegmentDistance\s*\(\s*documentPoint\s*,/,
     'the live emitter capsule must remain attached to the unwarped bucket position');
   assert.doesNotMatch(fieldSource, /emitterDistance\s*=\s*lineSegmentDistance\s*\(\s*warpedPoint\s*,/,
     'domain warping must not pull the live liquid source away from the bucket');
-  assert.match(fieldSource, /capillaryEdge/,
-    'the material must define a dark capillary edge');
-  assert.match(fieldSource, /selfShadow/,
-    'the material must include dimensional self-shadow');
-  assert.match(fieldSource, /pearlGlint/,
-    'the material must include a restrained pearlescent glint');
 }
 
 testOneBoundedSurfaceAndFixedUniformPacket();

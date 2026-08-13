@@ -24,35 +24,44 @@
     'uniform vec4 uViewport;',
     'uniform vec2 uDocumentSize;',
     'uniform vec2 uTargetSize;',
+    'uniform vec4 uContentRect;',
     'uniform vec4 uGestureStartControl[12];',
     'uniform vec4 uGestureEndShape[12];',
     'uniform vec4 uGestureStyle[12];',
     'uniform vec4 uEmitterPath;',
     'uniform vec4 uEmitterStyle;',
-    'const int CONTOUR_BANDS = 6;',
-    'const float PIGMENT_NEIGHBOR = 0.038;',
+    'const int CONTOUR_BANDS = 12;',
     '',
     'vec2 quadraticPoint(vec2 from, vec2 control, vec2 to, float t) {',
     '  float inverse = 1.0 - t;',
     '  return inverse * inverse * from + 2.0 * inverse * t * control + t * t * to;',
     '}',
     '',
-    'float lineSegmentDistance(vec2 point, vec2 from, vec2 to) {',
+    'vec2 lineSegmentDistanceSample(vec2 point, vec2 from, vec2 to) {',
     '  vec2 span = to - from;',
     '  float amount = clamp(dot(point - from, span) / max(dot(span, span), 0.0001), 0.0, 1.0);',
-    '  return length(point - (from + span * amount));',
+    '  return vec2(length(point - (from + span * amount)), amount);',
     '}',
     '',
-    'float quadraticDistance(vec2 point, vec2 from, vec2 control, vec2 to, float reveal) {',
+    'float lineSegmentDistance(vec2 point, vec2 from, vec2 to) {',
+    '  return lineSegmentDistanceSample(point, from, to).x;',
+    '}',
+    '',
+    'vec2 quadraticDistanceSample(vec2 point, vec2 from, vec2 control, vec2 to, float reveal) {',
     '  float distanceToCurve = 100000.0;',
+    '  float closestTravel = 0.0;',
     '  for (int sampleIndex = 0; sampleIndex < 9; sampleIndex += 1) {',
     '    float fromT = reveal * float(sampleIndex) / 9.0;',
     '    float toT = reveal * float(sampleIndex + 1) / 9.0;',
     '    vec2 segmentFrom = quadraticPoint(from, control, to, fromT);',
     '    vec2 segmentTo = quadraticPoint(from, control, to, toT);',
-    '    distanceToCurve = min(distanceToCurve, lineSegmentDistance(point, segmentFrom, segmentTo));',
+    '    vec2 curveProbe = lineSegmentDistanceSample(point, segmentFrom, segmentTo);',
+    '    if (curveProbe.x < distanceToCurve) {',
+    '      distanceToCurve = curveProbe.x;',
+    '      closestTravel = mix(fromT, toT, curveProbe.y);',
+    '    }',
     '  }',
-    '  return distanceToCurve;',
+    '  return vec2(distanceToCurve, closestTravel);',
     '}',
     '',
     'float smoothMinPolynomial(float first, float second, float radius) {',
@@ -62,7 +71,7 @@
     '}',
     '',
     'vec2 domainWarp(vec2 point, float time) {',
-    '  float slowTime = time * 0.085;',
+    '  float slowTime = time * 0.055;',
     '  vec2 firstWarp = vec2(',
     '    sin(point.y * 0.0062 + slowTime),',
     '    cos(point.x * 0.0051 - slowTime * 0.83)',
@@ -71,7 +80,9 @@
     '    sin((point.x + point.y) * 0.0027 - slowTime * 0.61),',
     '    cos((point.x - point.y) * 0.0031 + slowTime * 0.72)',
     '  );',
-    '  return point + firstWarp * 8.5 + secondWarp * 5.0;',
+    '  vec2 stillWarp = firstWarp * 10.5 + secondWarp * 6.5;',
+    '  vec2 livingWarp = vec2(sin(slowTime + point.y * 0.0017), cos(slowTime * 0.8 + point.x * 0.0019)) * 2.2;',
+    '  return point + stillWarp + livingWarp;',
     '}',
     '',
     'vec3 groundedPigment(float phase) {',
@@ -90,20 +101,13 @@
     '  return mix(magenta, cadmium, place - 5.0);',
     '}',
     '',
-    'vec3 contourPigment(float phase, float band) {',
-    '  vec3 lowerPigment = groundedPigment(phase - PIGMENT_NEIGHBOR);',
-    '  vec3 pigment = groundedPigment(phase);',
-    '  vec3 upperPigment = groundedPigment(phase + PIGMENT_NEIGHBOR);',
-    '  vec3 earthShadow = mix(lowerPigment, pigment, 0.22) * vec3(0.36, 0.32, 0.38);',
-    '  vec3 lowerBody = mix(lowerPigment, pigment, 0.58);',
-    '  vec3 upperBody = mix(pigment, upperPigment, 0.54);',
-    '  vec3 warmLight = mix(upperPigment, vec3(0.94, 0.79, 0.61), 0.26);',
-    '  if (band < 0.5) return earthShadow;',
-    '  if (band < 1.5) return lowerBody * vec3(0.68, 0.66, 0.72);',
-    '  if (band < 2.5) return mix(lowerBody, pigment, 0.72) * vec3(0.90, 0.94, 0.88);',
-    '  if (band < 3.5) return mix(pigment, upperBody, 0.38);',
-    '  if (band < 4.5) return upperBody * vec3(0.82, 0.88, 0.94);',
-    '  return warmLight;',
+    'vec3 contourPigment(float phase, float stripe, float flowPhase) {',
+    '  float spectrumOffset = (stripe - 5.5) * 0.018 + sin(flowPhase * 0.37) * 0.008;',
+    '  vec3 pigment = groundedPigment(phase + spectrumOffset);',
+    '  vec3 wetInk = mix(pigment, vec3(0.018, 0.016, 0.045), 0.48);',
+    '  vec3 pearl = mix(pigment, vec3(0.96, 0.91, 0.86), 0.18);',
+    '  float tonalWave = 0.5 + 0.5 * cos(stripe * 2.17 + flowPhase * 0.16);',
+    '  return mix(wetInk, pearl, 0.12 + tonalWave * 0.50);',
     '}',
     '',
     'void main() {',
@@ -112,9 +116,14 @@
     '  vec2 warpedPoint = domainWarp(documentPoint, uTime);',
     '  float liquidDistance = 100000.0;',
     '  float nearestDistance = 100000.0;',
+    '  float nearestCenterDistance = 100000.0;',
     '  float nearestWidth = 1.0;',
     '  float nearestPhase = 0.0;',
     '  float nearestSeed = 0.0;',
+    '  float nearestTravel = 0.0;',
+    '  vec2 nearestFrom = vec2(0.0);',
+    '  vec2 nearestControl = vec2(0.0);',
+    '  vec2 nearestTo = vec2(1.0);',
     '',
     '  for (int gestureIndex = 0; gestureIndex < 12; gestureIndex += 1) {',
     '    if (gestureIndex < uGestureCount) {',
@@ -127,17 +136,29 @@
     '          sin((warpedPoint.y + style.y * 31.0) * 0.009),',
     '          cos((warpedPoint.x - style.y * 27.0) * 0.008)',
     '        ) * min(10.0, width * 0.035);',
-    '        float centerDistance = quadraticDistance(',
+    '        vec2 curveSample = quadraticDistanceSample(',
     '          seededPoint, startControl.xy, startControl.zw, endShape.xy, endShape.w',
     '        );',
-    '        float strokeDistance = centerDistance - width * 0.5;',
-    '        float softness = clamp(width * 0.16, 12.0, 44.0);',
+    '        float centerDistance = curveSample.x;',
+    '        float spreadRamp = smoothstep(0.0, 0.36, curveSample.y);',
+    '        float widthPulse = 0.88 + 0.09 * sin(curveSample.y * 15.0 + style.y) +',
+    '          0.05 * sin(curveSample.y * 31.0 - style.y * 0.7);',
+    '        float landingExpansion = mix(0.18, 1.0, spreadRamp) * widthPulse;',
+    '        float connectorExpansion = 0.86 + 0.08 * sin(curveSample.y * 10.0 + style.y);',
+    '        float localWidth = width * mix(landingExpansion, connectorExpansion, step(0.5, style.w));',
+    '        float strokeDistance = centerDistance - localWidth * 0.5;',
+    '        float softness = clamp(localWidth * 0.13, 8.0, 38.0);',
     '        liquidDistance = smoothMinPolynomial(liquidDistance, strokeDistance, softness);',
     '        if (strokeDistance < nearestDistance) {',
     '          nearestDistance = strokeDistance;',
-    '          nearestWidth = width;',
+    '          nearestWidth = localWidth;',
     '          nearestPhase = style.x;',
     '          nearestSeed = style.y;',
+    '          nearestCenterDistance = centerDistance;',
+    '          nearestTravel = curveSample.y;',
+    '          nearestFrom = startControl.xy;',
+    '          nearestControl = startControl.zw;',
+    '          nearestTo = endShape.xy;',
     '        }',
     '      }',
     '    }',
@@ -153,24 +174,52 @@
     '      nearestWidth = emitterRadius * 2.0;',
     '      nearestPhase = uEmitterStyle.z;',
     '      nearestSeed = 0.0;',
+    '      nearestCenterDistance = emitterDistance + emitterRadius;',
+    '      nearestTravel = clamp(uEmitterStyle.y, 0.0, 1.0);',
+    '      nearestFrom = uEmitterPath.xy;',
+    '      nearestControl = mix(uEmitterPath.xy, emitterFront, 0.5);',
+    '      nearestTo = emitterFront;',
     '    }',
     '  }',
     '',
     '  float edgeFeather = max(1.5, min(uViewport.z, uViewport.w) / max(min(uTargetSize.x, uTargetSize.y), 1.0));',
     '  float bodyAlpha = 1.0 - smoothstep(-edgeFeather, edgeFeather * 1.5, liquidDistance);',
     '  float interior = max(0.0, -liquidDistance);',
-    '  float bandCoordinate = clamp(interior / max(nearestWidth * 0.075, 1.0), 0.0, float(CONTOUR_BANDS) - 0.001);',
+    '  float radialPosition = clamp(nearestCenterDistance / max(nearestWidth * 0.5, 1.0), 0.0, 1.0);',
+    '  float flowPhase = nearestTravel * 15.0 - uTime * 0.46 + nearestSeed * 0.071;',
+    '  float contourRipple = sin(flowPhase + radialPosition * 4.2) * 0.52 +',
+    '    sin(flowPhase * 0.43 + documentPoint.y * 0.006) * 0.24;',
+    '  float bandCoordinate = clamp(radialPosition * float(CONTOUR_BANDS) + contourRipple,',
+    '    0.0, float(CONTOUR_BANDS) - 0.001);',
     '  float contourBand = floor(bandCoordinate);',
-    '  vec3 color = contourPigment(nearestPhase + nearestSeed * 0.0015, contourBand);',
+    '  float bandFraction = fract(bandCoordinate);',
+    '  float bandAntialias = max(fwidth(bandCoordinate) * 1.25, 0.025);',
+    '  float bandBlend = smoothstep(1.0 - bandAntialias, 1.0, bandFraction);',
+    '  vec3 color = mix(',
+    '    contourPigment(nearestPhase + nearestSeed * 0.0015, contourBand, flowPhase),',
+    '    contourPigment(nearestPhase + nearestSeed * 0.0015, contourBand + 1.0, flowPhase),',
+    '    bandBlend',
+    '  );',
     '',
-    '  float capillaryEdge = exp(-abs(liquidDistance + 1.2) / max(2.2, edgeFeather * 1.8));',
-    '  float selfShadow = smoothstep(0.0, 18.0, interior) * (1.0 - smoothstep(26.0, 94.0, interior));',
-    '  float pearlGlint = exp(-pow((bandCoordinate - 3.65) * 1.65, 2.0)) *',
-    '    (0.52 + 0.48 * sin(documentPoint.x * 0.018 + documentPoint.y * 0.006 - uTime * 0.12));',
-    '  color *= 1.0 - capillaryEdge * 0.34;',
-    '  color *= 1.0 - selfShadow * 0.12;',
-    '  color = mix(color, vec3(0.96, 0.91, 0.84), pearlGlint * 0.16);',
-    '  float groundedAlpha = bodyAlpha * 0.94;',
+    '  vec2 nearestCenter = quadraticPoint(nearestFrom, nearestControl, nearestTo, nearestTravel);',
+    '  vec2 surfaceNormal = normalize(documentPoint - nearestCenter + vec2(0.001, 0.0));',
+    '  vec2 lightDirection = normalize(vec2(-0.48, -0.88));',
+    '  float lightFacing = 0.5 + 0.5 * dot(surfaceNormal, lightDirection);',
+    '  float wetSpecular = pow(max(dot(surfaceNormal, normalize(vec2(-0.20, -0.98))), 0.0), 18.0);',
+    '  wetSpecular *= 0.58 + 0.42 * sin(flowPhase * 1.7);',
+    '  float fresnelEdge = pow(radialPosition, 9.0);',
+    '  float darkWetEdge = smoothstep(0.82, 1.0, radialPosition);',
+    '  float travellingGlint = pow(0.5 + 0.5 * sin(flowPhase * 1.35 + radialPosition * 8.0), 12.0);',
+    '  color *= mix(0.72, 1.12, lightFacing);',
+    '  color = mix(color, vec3(0.012, 0.010, 0.032), darkWetEdge *',
+    '    (0.28 + (1.0 - lightFacing) * 0.20));',
+    '  color = mix(color, vec3(0.985, 0.955, 0.91), clamp(wetSpecular * 0.58 +',
+    '    fresnelEdge * lightFacing * 0.16 + travellingGlint * 0.12, 0.0, 0.72));',
+    '',
+    '  float readingLane = smoothstep(uContentRect.x - uContentRect.z, uContentRect.x + uContentRect.z, screenPoint.x) *',
+    '    (1.0 - smoothstep(uContentRect.y - uContentRect.z, uContentRect.y + uContentRect.z, screenPoint.x));',
+    '  color = mix(color, vec3(0.965, 0.955, 0.94), readingLane * 0.13);',
+    '  float groundedAlpha = bodyAlpha * mix(0.92, uContentRect.w, readingLane);',
     '  gl_FragColor = vec4(color, groundedAlpha);',
     '}'
   ].join('\n');
@@ -210,6 +259,7 @@
     var viewportUniform = new Float32Array([0, 0, 1, 1]);
     var documentSizeUniform = new Float32Array([1, 1]);
     var targetSizeUniform = new Float32Array([1, 1]);
+    var contentRectUniform = new Float32Array([0, 1, 90, 0.58]);
     var emitterPath = new Float32Array(4);
     var emitterStyle = new Float32Array(4);
     var uniforms = {
@@ -218,6 +268,7 @@
       uViewport: { value: viewportUniform },
       uDocumentSize: { value: documentSizeUniform },
       uTargetSize: { value: targetSizeUniform },
+      uContentRect: { value: contentRectUniform },
       uGestureStartControl: { value: gestureStartControl },
       uGestureEndShape: { value: gestureEndShape },
       uGestureStyle: { value: gestureStyle },
@@ -273,7 +324,11 @@
       scrollX: 0,
       scrollY: 0,
       documentWidth: 1,
-      documentHeight: 1
+      documentHeight: 1,
+      contentLeft: 0,
+      contentRight: 1,
+      contentFeather: 90,
+      contentOpacity: 0.58
     };
     var emitterState = {
       active: 0,
@@ -320,9 +375,15 @@
       var nextScrollY = finite(nextViewport.scrollY, viewport.scrollY);
       var nextDocumentWidth = Math.max(1, finite(nextViewport.documentWidth, viewport.documentWidth));
       var nextDocumentHeight = Math.max(1, finite(nextViewport.documentHeight, viewport.documentHeight));
+      var nextContentLeft = finite(nextViewport.contentLeft, viewport.contentLeft);
+      var nextContentRight = finite(nextViewport.contentRight, viewport.contentRight);
+      var nextContentFeather = Math.max(1, finite(nextViewport.contentFeather, viewport.contentFeather));
+      var nextContentOpacity = clamp(finite(nextViewport.contentOpacity, viewport.contentOpacity), 0.35, 0.82);
       if (viewport.width === nextWidth && viewport.height === nextHeight &&
           viewport.scrollX === nextScrollX && viewport.scrollY === nextScrollY &&
-          viewport.documentWidth === nextDocumentWidth && viewport.documentHeight === nextDocumentHeight) {
+          viewport.documentWidth === nextDocumentWidth && viewport.documentHeight === nextDocumentHeight &&
+          viewport.contentLeft === nextContentLeft && viewport.contentRight === nextContentRight &&
+          viewport.contentFeather === nextContentFeather && viewport.contentOpacity === nextContentOpacity) {
         return false;
       }
       viewport.width = nextWidth;
@@ -331,6 +392,10 @@
       viewport.scrollY = nextScrollY;
       viewport.documentWidth = nextDocumentWidth;
       viewport.documentHeight = nextDocumentHeight;
+      viewport.contentLeft = Math.min(nextContentLeft, nextContentRight);
+      viewport.contentRight = Math.max(nextContentLeft, nextContentRight);
+      viewport.contentFeather = nextContentFeather;
+      viewport.contentOpacity = nextContentOpacity;
 
       viewportUniform[0] = viewport.scrollX;
       viewportUniform[1] = viewport.scrollY;
@@ -338,6 +403,10 @@
       viewportUniform[3] = viewport.height;
       documentSizeUniform[0] = viewport.documentWidth;
       documentSizeUniform[1] = viewport.documentHeight;
+      contentRectUniform[0] = viewport.contentLeft;
+      contentRectUniform[1] = viewport.contentRight;
+      contentRectUniform[2] = viewport.contentFeather;
+      contentRectUniform[3] = viewport.contentOpacity;
 
       resizeTarget();
       composite.position.set(viewport.width * 0.5, viewport.height * 0.5, 4);
