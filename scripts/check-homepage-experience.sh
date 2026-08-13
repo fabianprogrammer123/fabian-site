@@ -10,6 +10,8 @@ trail="$root/assets/paint-journey-trail.js"
 character="$root/assets/paint-journey-character.js"
 ladder="$root/assets/paint-journey-ladder.js"
 particles="$root/assets/paint-journey-particles.js"
+liquid_model="$root/assets/paint-journey-liquid-model.js"
+liquid="$root/assets/paint-journey-liquid.js"
 journey="$root/assets/paint-journey.js"
 
 fail() {
@@ -65,9 +67,17 @@ for script in \
   'assets/paint-journey-character.js' \
   'assets/paint-journey-ladder.js' \
   'assets/paint-journey-particles.js' \
+  'assets/paint-journey-liquid-model.js' \
+  'assets/paint-journey-liquid.js' \
   'assets/paint-journey.js'; do
   require_text "$home" "<script src=\"$script\" defer>"
 done
+
+liquid_model_line=$(rg -n -F '<script src="assets/paint-journey-liquid-model.js" defer>' "$home" | cut -d: -f1)
+liquid_line=$(rg -n -F '<script src="assets/paint-journey-liquid.js" defer>' "$home" | cut -d: -f1)
+journey_line=$(rg -n -F '<script src="assets/paint-journey.js" defer>' "$home" | cut -d: -f1)
+test "$liquid_model_line" -lt "$liquid_line" || fail "liquid model must load before its renderer adapter"
+test "$liquid_line" -lt "$journey_line" || fail "liquid renderer must load before the journey controller"
 
 for level in thoughts background now why-this-site portrait; do
   require_text "$home" "data-journey-level=\"$level\""
@@ -184,6 +194,11 @@ done
 
 node "$root/scripts/check-paint-journey-particles.js"
 
+test -f "$liquid_model" || fail "missing assets/paint-journey-liquid-model.js"
+test -f "$liquid" || fail "missing assets/paint-journey-liquid.js"
+node "$root/scripts/check-paint-journey-liquid-model.js"
+node "$root/scripts/check-paint-journey-liquid.js"
+
 test -f "$journey" || fail "missing assets/paint-journey.js"
 
 node "$root/scripts/check-paint-journey-orchestrator.js"
@@ -214,8 +229,10 @@ for text in \
   'resumeIfTargetVisible' \
   'previousBucketOrigin.set(0, 0, 0)' \
   'portraitPoint' \
-  'trail.impact' \
-  'trail.veil' \
+  'createLiquidModel' \
+  'createLiquidField' \
+  'updateLiquidViewport' \
+  'getPourAmount' \
   'PAINT_RATES' \
   "classList.toggle('is-live'" \
   'webglcontextlost'; do

@@ -14,8 +14,7 @@
     'paint-swing': 1.75,
     vanish: 1.05
   };
-  var PAINT_RATES = { pour: 96, swing: 112, drip: 5 };
-  var LANDING_SEGMENTS = 18;
+  var PAINT_RATES = { lip: 10, commitment: 6 };
   var NAVIGATION_KEYS = {
     ' ': true,
     Spacebar: true,
@@ -56,27 +55,24 @@
   var currentPoint = { x: 0, y: 0 };
   var cancelPoint = { x: 0, y: 0 };
   var paintBurstEmitted = false;
-  var vanishBurstEmitted = false;
   var emissionCarry = 0;
-  var flowCarry = 0;
   var inputListenersAttached = false;
   var pausedUntilVisible = false;
-  var paintedLandingIndex = -1;
-  var landingPaintStep = 0;
-  var landingPathStartStep = 0;
+  var landingId = '';
   var landingNeedsRebase = false;
-  var landingAccentEmitted = false;
-  var landingMode = 0;
-  var landingHue = 0;
-  var landingScale = 1;
+  var landingPalettePhase = 0;
   var landingOrigin = { x: 0, y: 0 };
+  var landingControl = { x: 0, y: 0 };
   var landingDestination = { x: 0, y: 0 };
   var landingSequence = 0;
+  var connectorId = '';
+  var connectorOrigin = { x: 0, y: 0 };
+  var connectorControl = { x: 0, y: 0 };
+  var connectorDestination = { x: 0, y: 0 };
   var paintHue = 0;
   var climbDuration = DURATIONS['climb-ladder'];
   var climbCycles = 2;
   var responsiveMobile = null;
-  var previousFlowPoint = { x: 0, y: 0, ready: false };
 
   var THREE = null;
   var renderer = null;
@@ -91,6 +87,8 @@
   var previousBucketOrigin = null;
   var bucketVelocity = null;
   var paintVelocity = null;
+  var liquidModel = null;
+  var liquid = null;
 
   function setState(nextState, timestamp) {
     state = nextState;
@@ -98,16 +96,13 @@
     window.PaintJourneyState = state;
     if (stage) stage.setAttribute('data-journey-state', state);
     paintBurstEmitted = false;
-    vanishBurstEmitted = false;
     emissionCarry = 0;
-    flowCarry = 0;
-    previousFlowPoint.ready = false;
     if (nextState === 'bottom-paint' || nextState === 'paint-swing') {
-      paintedLandingIndex = -1;
-      landingPaintStep = 0;
-      landingPathStartStep = 0;
+      landingId = '';
       landingNeedsRebase = false;
-      landingAccentEmitted = false;
+    }
+    if (nextState === 'deploy-ladder') {
+      connectorId = '';
     }
   }
 
@@ -128,6 +123,12 @@
     var root = document.documentElement;
     var body = document.body;
     return Math.max(root.clientWidth, root.scrollWidth, body ? body.scrollWidth : 0);
+  }
+
+  function documentHeight() {
+    var root = document.documentElement;
+    var body = document.body;
+    return Math.max(root.clientHeight || 0, root.scrollHeight, body ? body.scrollHeight : 0);
   }
 
   function scrollX() {
@@ -248,6 +249,18 @@
     return output;
   }
 
+  function updateLiquidViewport() {
+    if (!liquid) return;
+    liquid.setViewport({
+      width: Math.max(1, window.innerWidth),
+      height: Math.max(1, window.innerHeight),
+      scrollX: scrollX(),
+      scrollY: scrollY(),
+      documentWidth: documentWidth(),
+      documentHeight: documentHeight()
+    });
+  }
+
   function resizeRenderer() {
     if (!renderer || !camera) return;
     var width = Math.max(1, window.innerWidth);
@@ -259,6 +272,7 @@
     camera.top = height;
     camera.bottom = 0;
     camera.updateProjectionMatrix();
+    updateLiquidViewport();
   }
 
   function isMobileViewport() {
@@ -279,6 +293,7 @@
       ladder.setMetrics(responsiveLadderMetrics(mobile));
     }
     if (particles && typeof particles.setMobile === 'function') particles.setMobile(mobile);
+    if (liquid && typeof liquid.setMobile === 'function') liquid.setMobile(mobile);
   }
 
   function recomputeLayout() {
@@ -333,8 +348,12 @@
         stateTo.y += targetDeltaY;
       }
     }
-    if ((state === 'bottom-paint' || state === 'paint-swing') && paintedLandingIndex === targetIndex) {
+    if ((state === 'bottom-paint' || state === 'paint-swing') && landingId) {
       landingNeedsRebase = true;
+    }
+    if (connectorId && nextSource && oldSource) {
+      connectorOrigin.x += nextSource.x - oldSource.x;
+      connectorOrigin.y += nextSource.y - oldSource.y;
     }
     if (state === 'deploy-ladder' || state === 'climb-ladder') {
       configureClimbCadence(Math.abs(stateTo.y - stateFrom.y));
@@ -452,147 +471,141 @@
   function resetBucketMotion() {
     if (previousBucketOrigin) previousBucketOrigin.set(0, 0, 0);
     if (bucketVelocity) bucketVelocity.set(0, 0, 0);
-    previousFlowPoint.ready = false;
   }
 
-  function configureLandingPath(documentPoint, canvasWidth, mobile) {
-    var sweepDistance = canvasWidth * ((mobile ? 0.78 : 0.82) + landingMode * 0.025);
-    var sweepY = documentPoint.y + (targetIndex % 2 === 0 ? -1 : 1) *
-      (mobile ? 48 : 74) * (0.78 + landingMode * 0.12);
+  function configureLandingPath(documentPoint, canvasWidth, mobile, sequence) {
+    var sweepDistance = canvasWidth * (mobile ? 0.82 : 0.86);
+    var bend = (targetIndex % 2 === 0 ? -1 : 1) * (mobile ? 34 : 58);
     landingOrigin.x = documentPoint.x - (mobile ? 2 : 8);
     landingOrigin.y = documentPoint.y + 4;
     landingDestination.x = clamp(landingOrigin.x - sweepDistance, 28, canvasWidth - 28);
-    landingDestination.y = clamp(sweepY, 28, document.documentElement.scrollHeight - 28);
+    landingDestination.y = clamp(documentPoint.y + bend, 28, documentHeight() - 28);
+    landingControl.x = mix(landingOrigin.x, landingDestination.x, 0.46);
+    landingControl.y = clamp(documentPoint.y - bend * 0.55 + ((sequence % 3) - 1) * 16,
+      28, documentHeight() - 28);
   }
 
-  function landingPaint(progress) {
-    if (!trail || !bucketOrigin || !character || progress < 0.2) return;
+  function characterPourAmount(progress) {
+    if (character && typeof character.getPourAmount === 'function') {
+      return clamp(character.getPourAmount(), 0, 1);
+    }
+    return clamp((progress - 0.16) / 0.24, 0, 1) * clamp((0.92 - progress) / 0.1, 0, 1);
+  }
+
+  function activePigmentHue() {
+    return landingId ? landingPalettePhase * 360 : paintHue;
+  }
+
+  function syncActivePigmentHue() {
+    var hue = activePigmentHue();
+    if (character && character.setPaintHue) character.setPaintHue(hue);
+    if (particles) particles.setHue(hue);
+  }
+
+  function ensureLandingGesture(documentPoint) {
+    if (!liquidModel) return '';
+    var canvasWidth = documentWidth();
+    var mobile = isMobileViewport();
+    var landingIndex = state === 'bottom-paint' ? 0 : targetIndex;
+    var waypoint = waypoints[landingIndex] || { name: 'bottom' };
+    landingId = 'landing:' + waypoint.name;
+    landingPalettePhase = (landingSequence * 0.157 + 0.61) % 1;
+    configureLandingPath(documentPoint, canvasWidth, mobile, landingSequence);
+    liquidModel.upsertGesture({
+      id: landingId,
+      from: { x: landingOrigin.x, y: landingOrigin.y },
+      control: { x: landingControl.x, y: landingControl.y },
+      to: { x: landingDestination.x, y: landingDestination.y },
+      width: clamp(canvasWidth * 0.28, mobile ? 124 : 190, mobile ? 230 : 390),
+      palettePhase: landingPalettePhase,
+      seed: 19 + landingSequence * 37,
+      reveal: 0,
+      spread: 1,
+      kind: 0
+    });
+    landingSequence += 1;
+    return landingId;
+  }
+
+  function updateLandingLiquid(progress) {
+    if (!liquid || !liquidModel || !bucketOrigin || !character) return;
     scene.updateMatrixWorld(true);
     character.paintSpout.getWorldPosition(bucketOrigin);
     var documentPoint = { x: 0, y: 0 };
     particlesToDocument(bucketOrigin, documentPoint);
-    var canvasWidth = documentWidth();
-    var mobile = isMobileViewport();
-    if (paintedLandingIndex !== targetIndex) {
-      landingMode = landingSequence % 5;
-      landingHue = (paintHue + landingSequence * 83) % 360;
-      landingScale = 0.86 + (landingSequence % 4) * 0.06;
-      configureLandingPath(documentPoint, canvasWidth, mobile);
-      landingPathStartStep = 0;
-      landingNeedsRebase = false;
-
-      if (landingMode === 0 || landingMode === 1 || landingMode === 4) {
-        trail.impact({
-          x: mobile ? canvasWidth + 6 : clamp(documentPoint.x - 22, 22, canvasWidth - 22),
-          y: documentPoint.y + (mobile ? 9 : 16),
-          hue: landingHue,
-          radius: (mobile ? 34 : (landingMode === 1 ? 46 : 60)) * landingScale,
-          direction: -1
-        });
-      }
-      paintedLandingIndex = targetIndex;
-      landingSequence += 1;
-    } else if (landingNeedsRebase) {
-      configureLandingPath(documentPoint, canvasWidth, mobile);
-      landingPathStartStep = landingPaintStep;
+    if (!landingId) ensureLandingGesture(documentPoint);
+    syncActivePigmentHue();
+    if (landingNeedsRebase && landingId) {
+      configureLandingPath(documentPoint, documentWidth(), isMobileViewport(), landingSequence - 1);
+      liquidModel.reflow(landingId, {
+        from: { x: landingOrigin.x, y: landingOrigin.y },
+        control: { x: landingControl.x, y: landingControl.y },
+        to: { x: landingDestination.x, y: landingDestination.y },
+        width: clamp(documentWidth() * 0.28, isMobileViewport() ? 124 : 190,
+          isMobileViewport() ? 230 : 390)
+      });
       landingNeedsRebase = false;
     }
+    var pourAmount = characterPourAmount(progress);
+    var gestureProgress = clamp((progress - 0.16) / 0.66, 0, 1);
+    var causalReveal = ease(gestureProgress) * pourAmount;
+    liquidModel.setReveal(landingId, causalReveal);
+    liquid.setEmitter({
+      active: pourAmount > 0.015,
+      origin: documentPoint,
+      front: {
+        x: mix(landingOrigin.x, landingDestination.x, ease(gestureProgress)),
+        y: mix(landingOrigin.y, landingDestination.y, ease(gestureProgress))
+      },
+      pressure: pourAmount,
+      palettePhase: landingPalettePhase
+    });
+  }
 
-    var gestureProgress = clamp((progress - 0.2) / 0.7, 0, 1);
-    var visibleStep = Math.min(LANDING_SEGMENTS, Math.floor(gestureProgress * LANDING_SEGMENTS));
-    var flowWidth = clamp(canvasWidth * 0.24, 110, 340);
-    while (landingPaintStep < visibleStep) {
-      var remainingSteps = Math.max(1, LANDING_SEGMENTS - landingPathStartStep);
-      var fromProgress = (landingPaintStep - landingPathStartStep) / remainingSteps;
-      var toProgress = (landingPaintStep + 1 - landingPathStartStep) / remainingSteps;
-      var segmentFrom = {
-        x: mix(landingOrigin.x, landingDestination.x, fromProgress),
-        y: mix(landingOrigin.y, landingDestination.y, fromProgress)
-      };
-      var segmentTo = {
-        x: mix(landingOrigin.x, landingDestination.x, toProgress),
-        y: mix(landingOrigin.y, landingDestination.y, toProgress)
-      };
-      trail.flow({
-        from: segmentFrom,
-        to: segmentTo,
-        hue: landingHue + landingPaintStep * 2.5,
-        width: flowWidth * landingScale * (landingMode === 2 ? 1.08 : 1),
-        alpha: mobile ? 0.72 : 0.84,
-        progress: 1,
-        seed: landingSequence * 37 + landingPaintStep
-      });
-      if (landingMode === 2 && landingPaintStep % 2 === 0) {
-        trail.veil({
-          from: segmentFrom,
-          to: segmentTo,
-          hue: landingHue + 24,
-          width: flowWidth * 1.12,
-          alpha: mobile ? 0.07 : 0.09
-        });
-      }
-      if (landingMode === 3) {
-        trail.ribbon({
-          from: segmentFrom,
-          to: segmentTo,
-          hue: landingHue + 44,
-          width: mobile ? 7 : 11,
-          alpha: 0.42
-        });
-      }
-      landingPaintStep += 1;
-    }
-
-    if (landingAccentEmitted || gestureProgress < 0.78) return;
-    landingAccentEmitted = true;
-    var accentX = mix(landingOrigin.x, landingDestination.x, landingMode === 0 ? 0.64 : 0.48);
-    var accentY = mix(landingOrigin.y, landingDestination.y, landingMode === 0 ? 0.64 : 0.48);
-    if (landingMode === 1) {
-      trail.spray({
-        x: accentX,
-        y: accentY,
-        hue: landingHue + 56,
-        radius: mobile ? 82 : 132,
-        count: mobile ? 28 : 42
-      });
-    } else if (landingMode === 2) {
-      trail.spray({
-        x: accentX,
-        y: accentY,
-        hue: landingHue + 24,
-        radius: mobile ? 104 : 166,
-        count: mobile ? 38 : 58
-      });
-    } else if (landingMode === 4) {
-      trail.spray({
-        x: accentX,
-        y: accentY,
-        hue: landingHue + 68,
-        radius: mobile ? 68 : 108,
-        count: mobile ? 22 : 34
-      });
-      trail.whorl({
-        x: accentX - (mobile ? 10 : 18),
-        y: accentY + (mobile ? 5 : 9),
-        hue: landingHue + 34,
-        radius: mobile ? 24 : 34,
-        turns: 0.62,
-        width: mobile ? 4 : 6,
-        direction: 1,
-        progress: 1
-      });
-    } else if (landingMode === 0) {
-      trail.whorl({
-        x: accentX,
-        y: accentY,
-        hue: landingHue + 42,
-        radius: (mobile ? 32 : 46) * landingScale,
-        turns: 0.84,
-        width: mobile ? 5 : 7,
-        direction: -1,
-        progress: 1
+  function updateClimbConnector(progress) {
+    if (!liquidModel || !liquid || !character || !bucketOrigin || targetIndex <= 0) return;
+    scene.updateMatrixWorld(true);
+    character.paintSpout.getWorldPosition(bucketOrigin);
+    var documentPoint = { x: 0, y: 0 };
+    particlesToDocument(bucketOrigin, documentPoint);
+    var source = waypoints[targetIndex - 1];
+    var target = waypoints[targetIndex];
+    if (!source || !target) return;
+    if (!connectorId) {
+      connectorId = 'connector:' + source.name + ':' + target.name;
+      connectorOrigin.x = landingId ? landingOrigin.x : source.x;
+      connectorOrigin.y = landingId ? landingOrigin.y : source.y;
+      connectorControl.x = connectorOrigin.x - (isMobileViewport() ? 16 : 28);
+      connectorControl.y = mix(connectorOrigin.y, target.y, 0.5);
+      connectorDestination.x = documentPoint.x;
+      connectorDestination.y = documentPoint.y;
+      liquidModel.upsertGesture({
+        id: connectorId,
+        from: { x: connectorOrigin.x, y: connectorOrigin.y },
+        control: { x: connectorControl.x, y: connectorControl.y },
+        to: { x: connectorDestination.x, y: connectorDestination.y },
+        width: isMobileViewport() ? 48 : 68,
+        palettePhase: landingPalettePhase,
+        seed: 71 + targetIndex * 29,
+        reveal: clamp(progress, 0, 1),
+        spread: 0.88,
+        kind: 1
       });
     }
+    connectorDestination.x = documentPoint.x;
+    connectorDestination.y = documentPoint.y;
+    connectorControl.x = mix(connectorOrigin.x, connectorDestination.x, 0.48) -
+      (isMobileViewport() ? 14 : 24);
+    connectorControl.y = mix(connectorOrigin.y, connectorDestination.y, 0.5);
+    liquidModel.reflow(connectorId, {
+      from: { x: connectorOrigin.x, y: connectorOrigin.y },
+      control: { x: connectorControl.x, y: connectorControl.y },
+      to: { x: connectorDestination.x, y: connectorDestination.y },
+      width: isMobileViewport() ? 48 : 68
+    });
+    liquidModel.setReveal(connectorId, clamp(progress, 0, 1));
+    liquid.setEmitter({ active: false, origin: documentPoint, front: documentPoint, pressure: 0,
+      palettePhase: landingPalettePhase });
   }
 
   function updateLadderSpan(progress, anchor) {
@@ -629,33 +642,10 @@
       velocity: paintVelocity,
       bucketVelocity: bucketVelocity,
       count: count,
-      hue: paintHue
+      hue: activePigmentHue()
     };
     if (wide) particles.burst(config);
     else particles.emit(config);
-
-    flowCarry += delta;
-    if (flowCarry >= (window.innerWidth <= 520 ? 0.13 : 0.09)) {
-      var documentPoint = { x: 0, y: 0 };
-      particlesToDocument(bucketOrigin, documentPoint);
-      if (previousFlowPoint.ready) {
-        trail.flow({
-          from: { x: previousFlowPoint.x, y: previousFlowPoint.y },
-          to: { x: documentPoint.x - (wide ? 24 : 8), y: documentPoint.y + (wide ? 18 : 8) },
-          hue: paintHue,
-          width: wide
-            ? (window.innerWidth <= 520 ? 74 : 112)
-            : (window.innerWidth <= 520 ? 42 : 68),
-          alpha: wide ? 0.7 : 0.56,
-          progress: 1,
-          seed: targetIndex * 97 + Math.round(documentPoint.y * 0.1)
-        });
-      }
-      previousFlowPoint.x = documentPoint.x;
-      previousFlowPoint.y = documentPoint.y;
-      previousFlowPoint.ready = true;
-      flowCarry = 0;
-    }
   }
 
   function emitStream(rate, wide, progress, delta) {
@@ -745,8 +735,7 @@
     var target = waypoints[targetIndex] || waypoints[waypoints.length - 1];
 
     paintHue = (paintHue + delta * 76) % 360;
-    if (character && character.setPaintHue) character.setPaintHue(paintHue);
-    if (particles) particles.setHue(paintHue);
+    syncActivePigmentHue();
 
     if (state === 'entering') {
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
@@ -754,12 +743,13 @@
     } else if (state === 'bottom-paint') {
       positionCharacter(stateTo);
       character.setPose('paint-swing', progress, 1);
-      if (progress < 1) emitStream(PAINT_RATES.pour, false, progress, delta);
-      if (progress > 0.68 && progress < 1 && !paintBurstEmitted) {
+      updateLandingLiquid(progress);
+      var bottomPourAmount = characterPourAmount(progress);
+      if (bottomPourAmount > 0.04) emitStream(PAINT_RATES.lip, false, progress, delta);
+      if (bottomPourAmount > 0.78 && !paintBurstEmitted) {
         paintBurstEmitted = true;
-        emitPaint(window.innerWidth <= 520 ? 44 : 72, true, progress, delta);
+        emitPaint(PAINT_RATES.commitment, true, progress, delta);
       }
-      landingPaint(progress);
     } else if (state === 'await-target') {
       positionCharacter(currentPoint);
       character.setPose('rest', 1, timestamp * 0.0015);
@@ -773,7 +763,7 @@
       updateLadderSpan(1, 'bottom');
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
       character.setPose('climb-ladder', progress, climbCycles);
-      if (progress > 0.08 && progress < 0.94) emitStream(PAINT_RATES.drip, false, progress, delta);
+      updateClimbConnector(eased);
     } else if (state === 'retrieve-ladder') {
       positionCharacter(stateTo);
       character.setPose('retrieve-ladder', progress, timestamp * 0.004);
@@ -781,20 +771,17 @@
     } else if (state === 'paint-swing') {
       positionCharacter(stateTo);
       character.setPose('paint-swing', progress, 0);
-      if (progress < 1) emitStream(PAINT_RATES.swing, false, progress, delta);
-      if (progress > 0.5 && progress < 1 && !paintBurstEmitted) {
+      updateLandingLiquid(progress);
+      var swingPourAmount = characterPourAmount(progress);
+      if (swingPourAmount > 0.04) emitStream(PAINT_RATES.lip, false, progress, delta);
+      if (swingPourAmount > 0.78 && !paintBurstEmitted) {
         paintBurstEmitted = true;
-        emitPaint(window.innerWidth <= 520 ? 52 : 78, true, progress, delta);
+        emitPaint(PAINT_RATES.commitment, true, progress, delta);
       }
-      landingPaint(progress);
     } else if (state === 'vanish') {
       positionCharacter({ x: mix(stateFrom.x, stateTo.x, eased), y: mix(stateFrom.y, stateTo.y, eased) });
       character.setPose('vanish', progress, 0);
       character.setOpacity(1 - eased);
-      if (progress > 0.16 && !vanishBurstEmitted) {
-        vanishBurstEmitted = true;
-        emitPaint(window.innerWidth <= 520 ? 24 : 40, true, progress, delta);
-      }
     } else if (state === 'complete') {
       character.setOpacity(0);
       if (ladder) ladder.hide();
@@ -831,6 +818,8 @@
 
     try {
       updateJourney(timestamp, delta);
+      updateLiquidViewport();
+      liquid.update(delta, timestamp * 0.001);
       renderer.render(scene, camera);
     } catch (error) {
       failLive();
@@ -899,10 +888,13 @@
     if (ladder) ladder.dispose();
     if (particles) particles.dispose();
     if (character) character.dispose();
+    if (liquid) liquid.dispose();
     if (renderer) renderer.dispose();
     ladder = null;
     particles = null;
     character = null;
+    liquid = null;
+    liquidModel = null;
     renderer = null;
     scene = null;
     camera = null;
@@ -943,7 +935,9 @@
     if (cancelledBeforeInitialization || state === 'cancelled-rest') return;
     THREE = module;
     if (!THREE || !liveCanvas || !trail || typeof PaintJourney.createCharacter !== 'function' ||
-        typeof PaintJourney.createLadder !== 'function' || typeof PaintJourney.createParticles !== 'function') {
+        typeof PaintJourney.createLadder !== 'function' || typeof PaintJourney.createParticles !== 'function' ||
+        typeof PaintJourney.createLiquidModel !== 'function' ||
+        typeof PaintJourney.createLiquidField !== 'function') {
       throw new Error('Paint journey runtime is unavailable');
     }
 
@@ -955,8 +949,18 @@
     camera.lookAt(0, 0, 0);
     resizeRenderer();
 
-    character = PaintJourney.createCharacter({ THREE: THREE, scene: scene });
     var mobile = isMobileViewport();
+    liquidModel = PaintJourney.createLiquidModel({ maxGestures: 12 });
+    liquid = PaintJourney.createLiquidField({
+      THREE: THREE,
+      renderer: renderer,
+      scene: scene,
+      model: liquidModel,
+      mobile: mobile
+    });
+    updateLiquidViewport();
+
+    character = PaintJourney.createCharacter({ THREE: THREE, scene: scene });
     var ladderMetrics = responsiveLadderMetrics(mobile);
     ladder = PaintJourney.createLadder({
       THREE: THREE,

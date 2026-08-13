@@ -75,16 +75,16 @@ requirePattern(/function\s+characterScale\s*\([^)]*\)[\s\S]{0,120}\?\s*0\.44\s*:
   'the mobile figure must remain compact beside the content');
 requirePattern(/currentPoint\.x\s*\+=\s*laneDeltaX[\s\S]{0,220}stateFrom\.x\s*\+=\s*laneDeltaX[\s\S]{0,220}stateTo\.x\s*\+=\s*laneDeltaX/,
   'a responsive resize must keep the active character and ladder on the right-side lane');
-requirePattern(/function\s+applyResponsiveMetrics\s*\([^)]*\)[\s\S]{0,500}ladder\.setMetrics[\s\S]{0,300}particles\.setMobile/,
-  'a breakpoint-crossing resize must update the existing ladder and particle system');
+requirePattern(/function\s+applyResponsiveMetrics\s*\([^)]*\)[\s\S]{0,500}ladder\.setMetrics[\s\S]{0,300}particles\.setMobile[\s\S]{0,220}liquid\.setMobile/,
+  'a breakpoint-crossing resize must update the ladder, particles, and bounded liquid target');
 requirePattern(/capacity:\s*600/,
   'a mobile-started journey must retain capacity to expand safely onto desktop');
 requirePattern(/sourceDeltaY[\s\S]{0,900}targetDeltaY/,
   'responsive layout changes must track source and target heights independently');
 requirePattern(/landingNeedsRebase\s*=\s*true/,
   'an active bucket gesture must rebase its remaining path after responsive layout changes');
-requirePattern(/landingPathStartStep\s*=\s*landingPaintStep/,
-  'a rebased bucket gesture must continue from its next undrawn segment');
+requirePattern(/landingNeedsRebase[\s\S]{0,500}liquidModel\.reflow\(landingId,/,
+  'a responsive landing reflow must update its stable gesture without duplicating paint');
 requirePattern(/function\s+recomputeLayout\s*\([^)]*\)[\s\S]{0,3000}resetBucketMotion\(\)/,
   'responsive reflow must clear stale bucket velocity and ribbon history');
 requirePattern(/getAnchors:\s*measureWaypoints/,
@@ -113,30 +113,52 @@ requirePattern(/state\s*===\s*'vanish'[\s\S]{0,360}character\.setPose\('vanish',
   'the final figure pose must settle continuously while fading');
 requirePattern(/setState\('complete'/,
   'the top disappearance must end in a complete state');
-requirePattern(/trail\.impact\(/,
-  'each landing must create a pooled paint impact');
-requirePattern(/trail\.veil\(/,
-  'each landing must cast a broad translucent paint veil across the site');
-requirePattern(/trail\.flow\(\{[\s\S]{0,380}width:\s*flowWidth/,
-  'each landing must pour a layered fluid current broadly through the page background');
-requirePattern(/flowWidth\s*=\s*clamp\(canvasWidth\s*\*\s*0\.24,\s*110,\s*340\)/,
-  'fluid background coverage must scale from mobile to a broad desktop current');
-requirePattern(/previousFlowPoint\.ready[\s\S]{0,500}trail\.flow\(/,
-  'climb drips must join successive bucket positions into one continuous vertical pigment route');
-requirePattern(/landingSequence\s*\*\s*83/,
-  'successive landings must rotate through materially different pigment families');
-requirePattern(/landingHue\s*\+\s*landingPaintStep\s*\*\s*2\.5/,
-  'one local fluid gesture must remain inside a cohesive neighboring pigment family');
-requirePattern(/landingMode\s*=\s*landingSequence\s*%\s*5/,
-  'the six landings must rotate through at least five distinct gesture signatures');
-requirePattern(/LANDING_SEGMENTS\s*=\s*18/,
-  'broad page paint must flow from the bucket in a smooth, finely segmented reveal');
-requirePattern(/while\s*\(landingPaintStep\s*<\s*visibleStep\)/,
-  'a landing must accumulate its broad gesture instead of appearing all at once');
-requirePattern(/landingMode\s*===\s*1[\s\S]{0,500}trail\.spray\(/,
-  'one landing composition must favor a loose artist-style sprinkle field');
-requirePattern(/PAINT_RATES\s*=\s*\{[\s\S]{0,160}pour:\s*(?:[89]\d|\d{3,})[\s\S]{0,120}swing:\s*(?:[89]\d|\d{3,})/,
-  'bucket pours and swings must emit a visibly connected stream');
+requirePattern(/liquidModel\s*=\s*PaintJourney\.createLiquidModel\(\{\s*maxGestures:\s*12\s*\}\)/,
+  'the live runtime must construct one bounded document-space liquid model');
+requirePattern(/liquid\s*=\s*PaintJourney\.createLiquidField\(\{[\s\S]{0,300}model:\s*liquidModel[\s\S]{0,160}mobile:\s*mobile/,
+  'the live runtime must bind one liquid field to the shared Three.js scene');
+requirePattern(/function\s+ensureLandingGesture\s*\(/,
+  'each semantic landing must be represented by one stable liquid gesture');
+requirePattern(/landingIndex\s*=\s*state\s*===\s*'bottom-paint'\s*\?\s*0\s*:\s*targetIndex/,
+  'the opening bottom pour and the first upper landing must keep distinct stable gesture IDs');
+requirePattern(/id:\s*landingId[\s\S]{0,260}from:\s*\{\s*x:\s*landingOrigin\.x,\s*y:\s*landingOrigin\.y\s*\}[\s\S]{0,220}control:\s*\{\s*x:\s*landingControl\.x,\s*y:\s*landingControl\.y\s*\}[\s\S]{0,220}to:\s*\{\s*x:\s*landingDestination\.x,\s*y:\s*landingDestination\.y\s*\}/,
+  'a landing must be one broad quadratic from the captured bucket spout');
+requirePattern(/function\s+updateClimbConnector\s*\(/,
+  'each climb must grow one stable connector from the bucket lane');
+requirePattern(/['"]connector:['"]/,
+  'climb gesture IDs must be semantic and stable');
+requirePattern(/liquidModel\.reflow\(connectorId,/,
+  'a climb connector must update geometry in place instead of adding segments');
+requirePattern(/typeof\s+character\.getPourAmount\s*===\s*['"]function['"][\s\S]{0,160}character\.getPourAmount\(\)/,
+  'liquid reveal must use the character bucket tilt when that causal API is available');
+requirePattern(/liquidModel\.setReveal\(landingId,\s*causalReveal\)/,
+  'the broad field must reveal monotonically from the bucket gesture');
+requirePattern(/liquid\.setEmitter\(\{[\s\S]{0,260}origin:\s*documentPoint[\s\S]{0,220}pressure:\s*pourAmount/,
+  'the only live liquid emitter must stay attached to the projected bucket spout');
+requirePattern(/function\s+activePigmentHue\s*\([^)]*\)\s*\{[\s\S]{0,160}landingId\s*\?\s*landingPalettePhase\s*\*\s*360\s*:\s*paintHue/,
+  'one helper must own the active gesture pigment family');
+requirePattern(/hue:\s*activePigmentHue\(\)/,
+  'bucket lip and commitment particles must use the same pigment helper as the liquid field');
+assert.doesNotMatch(source, /hue:\s*paintHue/,
+  'particle emission must never bypass the active landing palette with the drifting preview hue');
+requirePattern(/if\s*\(!landingId\)\s*ensureLandingGesture\(documentPoint\);[\s\S]{0,500}syncActivePigmentHue\(\)/,
+  'the newly initialized landing palette must reach the bucket and particles before emission');
+requirePattern(/state\s*===\s*'bottom-paint'[\s\S]{0,220}updateLandingLiquid\(progress\)[\s\S]{0,180}emitStream/,
+  'the opening surface gesture must lock its pigment before emitting bucket droplets');
+requirePattern(/state\s*===\s*'paint-swing'[\s\S]{0,220}updateLandingLiquid\(progress\)[\s\S]{0,180}emitStream/,
+  'each upper surface gesture must lock its pigment before emitting bucket droplets');
+requirePattern(/function\s+updateLiquidViewport\s*\(/,
+  'the liquid surface must have one document-to-viewport update path');
+requirePattern(/function\s+frame\s*\([^)]*\)[\s\S]{0,500}updateLiquidViewport\(\)[\s\S]{0,180}liquid\.update\(delta,\s*timestamp\s*\*\s*0\.001\)/,
+  'every live frame must refresh document scroll uniforms before rendering the liquid target');
+assert.doesNotMatch(source, /LANDING_SEGMENTS|landingPaintStep|landingPathStartStep/,
+  'the controller must not retain segmented broad-stroke state');
+assert.doesNotMatch(source, /trail\.(?:flow|veil|whorl|spray)\s*\(/,
+  'the live controller must not layer translucent broad Canvas2D marks over the liquid field');
+assert.equal((source.match(/liquidModel\.upsertGesture\s*\(/g) || []).length, 2,
+  'the controller must have exactly one landing insertion path and one connector insertion path');
+requirePattern(/PAINT_RATES\s*=\s*\{\s*lip:\s*(?:[4-9]|1\d),\s*commitment:\s*(?:[2-9]|1\d)\s*\}/,
+  'the remaining particle system must stay a small lip stream and one commitment splash');
 assert.doesNotMatch(source, /\brope\b|throw-rope|coil-rope|portrait-rest/,
   'the revised live journey must not retain rope or lingering portrait-rest behavior');
 
@@ -250,6 +272,8 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
   let drawStaticCalls = 0;
   let freezeCalls = 0;
   let fallbackOptions = null;
+  let createLiquidModelCalls = 0;
+  let createLiquidFieldCalls = 0;
   const stage = {
     classList: { toggle() {} },
     querySelector() { return null; },
@@ -283,6 +307,8 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
   const window = {
     PaintJourney: {
       createTrail() { createTrailCalls += 1; return trail; },
+      createLiquidModel() { createLiquidModelCalls += 1; return {}; },
+      createLiquidField() { createLiquidFieldCalls += 1; return {}; },
       loadThree() { loadThreeCalls += 1; return new Promise(() => {}); }
     },
     PaintFinale: { startFallback(options) { fallbackOptions = options; } },
@@ -323,7 +349,17 @@ function createBottomTriggerHarness({ reduced = false } = {}) {
     fire(type) {
       for (const callback of listeners.get(type) || []) callback({ type });
     },
-    counts() { return { createTrailCalls, loadThreeCalls, drawStaticCalls, freezeCalls, fallbackOptions }; }
+    counts() {
+      return {
+        createTrailCalls,
+        createLiquidModelCalls,
+        createLiquidFieldCalls,
+        loadThreeCalls,
+        drawStaticCalls,
+        freezeCalls,
+        fallbackOptions
+      };
+    }
   };
 }
 
@@ -332,6 +368,8 @@ function testExactBottomLazilyStartsAnimatedAndReducedMotionPaths() {
     const harness = createBottomTriggerHarness({ reduced });
     assert.deepEqual(harness.counts(), {
       createTrailCalls: 0,
+      createLiquidModelCalls: 0,
+      createLiquidFieldCalls: 0,
       loadThreeCalls: 0,
       drawStaticCalls: 0,
       freezeCalls: 0,
@@ -349,6 +387,10 @@ function testExactBottomLazilyStartsAnimatedAndReducedMotionPaths() {
     harness.fire('scroll');
     const counts = harness.counts();
     assert.equal(counts.createTrailCalls, 1, 'reaching the two-pixel bottom tolerance must initialize once');
+    assert.equal(counts.createLiquidModelCalls, 0,
+      'the liquid model must stay unconstructed until the lazily loaded Three.js runtime resolves');
+    assert.equal(counts.createLiquidFieldCalls, 0,
+      'the liquid render target must stay unconstructed until the lazily loaded Three.js runtime resolves');
     if (reduced) {
       assert.equal(counts.loadThreeCalls, 0, 'reduced motion must never load the 3D runtime');
       assert.equal(counts.drawStaticCalls, 1, 'reduced motion must draw its rich static field only at bottom');
