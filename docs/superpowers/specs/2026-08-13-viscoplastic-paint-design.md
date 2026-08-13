@@ -43,11 +43,11 @@ Desktop budgets:
 Mobile budgets:
 
 - simulation scale 0.14, 160,000 pixels maximum;
-- pigment scale 0.22, 320,000 pixels maximum;
+- pigment scale 0.38, 420,000 pixels maximum so mobile filaments and the meniscus do not collapse into four-pixel blocks;
 - 20 Hz fixed simulation, one step maximum;
 - four pressure iterations.
 
-All targets use half-float when renderable, with RGBA8 as a progressive fallback. They have no depth, stencil, mipmaps, or multisampling. Target dimensions also respect the renderer's maximum texture size.
+All simulation targets require renderable half-float textures. An unsupported device takes the existing Canvas fallback rather than clamping signed velocity into RGBA8. Targets have no depth, stencil, mipmaps, or multisampling, use clamp wrapping and no color-space conversion, and respect the renderer's maximum texture size.
 
 ## Pass graph
 
@@ -84,7 +84,7 @@ Mixing therefore behaves subtractively: yellow and blue move toward green, red a
 
 ## Wet surface
 
-The composite samples the document-space pigment atlas using the viewport scroll offset. It derives a surface normal from neighboring thickness samples. Fresh deep paint uses a narrow dielectric highlight and low roughness; thin or settled paint is rougher. A light-facing 1 to 4 pixel meniscus and an interior capillary shadow define raised wet edges. Thick regions deepen and saturate; thin regions reveal paper. Static, subtle canvas tooth perturbs the normal without time-driven shimmer.
+The composite is a custom shader, not a basic textured plane. It maps each screen fragment to one full-document atlas coordinate with `(scroll + screenPoint) / documentSize` and one explicit document-down to texture-up Y conversion. It derives a surface normal from neighboring thickness samples. Fresh deep paint uses a narrow dielectric highlight and low roughness; thin or settled paint is rougher. A light-facing 1 to 4 pixel meniscus and an interior capillary shadow define raised wet edges. Thick regions deepen and saturate; thin regions reveal paper. Static, subtle canvas tooth perturbs the normal without time-driven shimmer.
 
 There are no procedural travelling glints. When the height field stops moving, its highlights stop moving.
 
@@ -95,6 +95,8 @@ Scroll changes only the document sampling offset. It never clears or resizes sim
 Responsive geometry or document-height changes increment a layout revision. The field reallocates only when bounded target dimensions change, clears its state, deposits all revealed gestures at their new semantic locations, and runs a few relaxation steps. Stable IDs, pigment phases, reveal values, and the exact-bottom activation contract remain unchanged.
 
 After the painter disappears, actor resources are disposed while the liquid continues at the existing 24 fps desktop or 15 fps mobile ambient budget. Once mobility has decayed for roughly 12 seconds without injection, solver passes stop; scrolling still composites the stationary atlas. Hidden documents run no passes. Context loss and pagehide retain their current safe fallback and disposal behavior.
+
+Normal-path airborne-particle collisions enter the GPU field as bounded local impact sources. They never stamp radial marks into the persistent Canvas trail. The Canvas stays blank during a successful WebGL journey and is used only for reduced motion, module failure, cancellation fallback, or context loss.
 
 ## Acceptance criteria
 
@@ -107,4 +109,3 @@ After the painter disappears, actor resources are disposed while the liquid cont
 - Paint stays anchored to document content while scrolling and reseeds semantically after responsive reflow.
 - The central reading lane remains legible and the page never gains horizontal overflow.
 - Desktop and mobile runs complete without runtime errors, dispose the painter at the top, retain the paint, and respect the frame and texture budgets.
-

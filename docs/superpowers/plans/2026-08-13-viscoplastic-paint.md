@@ -16,7 +16,9 @@
 - Modify `scripts/check-paint-journey-liquid-model.js`: test monotonic revisions, immutable packets, and layout revisions.
 - Replace `assets/paint-journey-liquid.js`: own viscoplastic state, pass graph, source injection, full-document atlas, wet material, frame budgets, and disposal.
 - Replace `scripts/check-paint-journey-liquid.js`: test target allocation, pass order, source causality, physics/material shader contracts, reflow, responsiveness, throttling, and cleanup.
-- Modify `assets/paint-journey.js`: pass bucket document velocity and flow to the local emitter while preserving every existing lifecycle contract.
+- Modify `assets/paint-journey.js`: pass bucket document velocity, flow, and bounded particle impacts to the local fluid source while preserving every existing lifecycle contract.
+- Modify `assets/paint-journey-particles.js`: expose particle collision batches to the controller instead of permanently stamping the live Canvas trail.
+- Modify `scripts/check-paint-journey-particles.js`: test collision callback batching and ensure the Canvas trail remains untouched in the live path.
 - Modify `scripts/check-paint-journey-orchestrator.js`: test local spout source semantics and reject a permanent emitter-to-front ribbon.
 - Modify `scripts/check-homepage-experience.sh`: include the new liquid-model/field checks without changing route or content contracts.
 
@@ -103,7 +105,7 @@ Mobile expects four pressure passes and one fixed step maximum.
 
 - [ ] **Step 2: Write failing source, physics, and material checks**
 
-Assert reveal `0.2` then `0.3` deposits only `[0, 0.2]` then `[0.2, 0.3]`; repeating `0.3` adds no source; reflow clears and reseeds all revealed gestures once. Require shader source for semi-Lagrangian backtrace, divergence, pressure Jacobi, pressure-gradient subtraction, negative texture-Y gravity, yield threshold, shear-dependent drag, thickness-gradient surface relaxation, low-diffusion pigment advection, Kubelka-Munk reflectance, thickness-derived normal, wet roughness, meniscus, and reading-lane attenuation. Explicitly reject `CONTOUR_BANDS`, `SPECTRUM_STRIPE_SPAN`, quadratic SDF display, `travellingGlint`, and an emitter line segment.
+Assert reveal `0.2` then `0.3` deposits only `[0, 0.2]` then `[0.2, 0.3]`; repeating `0.3` adds no source; reflow clears and reseeds all revealed gestures once. Require shader source for semi-Lagrangian backtrace, divergence, pressure Jacobi, pressure-gradient subtraction, negative texture-Y gravity, yield threshold, shear-dependent drag, thickness-gradient surface relaxation, low-diffusion pigment advection, Kubelka-Munk reflectance, thickness-derived normal, wet roughness, meniscus, and reading-lane attenuation. Require a custom composite shader that maps `(scroll + screenPoint) / documentSize` with one Y flip. Explicitly reject `CONTOUR_BANDS`, `SPECTRUM_STRIPE_SPAN`, quadratic SDF display, `travellingGlint`, `MeshBasicMaterial`, and an emitter line segment.
 
 - [ ] **Step 3: Run the field check and verify RED**
 
@@ -122,7 +124,7 @@ function runPass(material, destination) { /* restore renderer target */ }
 function boundedDimensions(documentWidth, documentHeight, scale, cap, maximum) { /* preserve aspect */ }
 ```
 
-Create named materials for clear, source velocity, source pigment, velocity advection/forces, divergence, pressure, gradient subtraction, pigment advection, and the viewport wet composite. Use one shared full-screen simulation mesh and swap its material per pass.
+Create named materials for clear, source velocity, source pigment, velocity advection/forces, divergence, pressure, gradient subtraction, pigment advection, and the viewport wet composite. Use one shared full-screen simulation mesh and swap its material per pass. Feature-gate renderable half-float targets and throw into the existing controller fallback when unavailable; do not use unsigned-byte signed velocity. Preserve and restore the renderer target, `autoClear`, viewport, scissor, and scissor-test state around solver passes.
 
 - [ ] **Step 5: Implement causal interval injection**
 
@@ -130,7 +132,7 @@ Read `model.getSimulationPacket()` during updates. Track `lastRevealById`. Sampl
 
 - [ ] **Step 6: Implement the fixed-step viscoplastic solver**
 
-Use desktop `1/30` with at most two catch-up steps and eight pressure iterations; mobile `1/20`, one step, four pressure iterations. Apply downward gravity only where thickness and wet mobility exceed the yield threshold, strong resting drag, reduced drag under fresh shear, restrained surface-gradient relaxation, and deterministic substrate resistance. Advect pigment with low diffusion and bounded sharpening.
+Use desktop `1/30` with at most two catch-up steps and eight pressure iterations; mobile `1/20`, one step, four pressure iterations. Apply downward gravity only where thickness and wet mobility exceed the yield threshold, strong resting drag, reduced drag under fresh shear, restrained surface-gradient relaxation, and deterministic substrate resistance. Advect pigment with low diffusion and bounded sharpening. Use mobile pigment scale 0.38, subject to the 420,000-pixel and maximum-texture-size caps.
 
 - [ ] **Step 7: Implement subtractive wet rendering**
 
@@ -148,11 +150,13 @@ Expected: all pass.
 
 Commit: `git add assets/paint-journey-liquid.js scripts/check-paint-journey-liquid.js && git commit -m "Simulate viscoplastic document paint"`
 
-### Task 3: Bucket source integration and regression protection
+### Task 3: Bucket and particle source integration
 
 **Files:**
 - Modify: `scripts/check-paint-journey-orchestrator.js`
 - Modify: `assets/paint-journey.js`
+- Modify: `scripts/check-paint-journey-particles.js`
+- Modify: `assets/paint-journey-particles.js`
 - Modify: `scripts/check-homepage-experience.sh`
 
 - [ ] **Step 1: Write failing controller checks**
@@ -173,15 +177,17 @@ liquid.setEmitter({
 
 Retain all exact-bottom, no-pretrigger-allocation, reduced-motion, loading cancellation, pagehide, context-loss, completion, ambient retention, semantic reflow, and mobile tests.
 
+Add a particle behavior check that one update delivers all collisions through `onImpactBatch(items, count)` and does not call `trail.stampBatch` or `trail.stamp` when that callback is provided. Preserve legacy trail stamping only when the callback is absent, so isolated fallback behavior remains compatible.
+
 - [ ] **Step 2: Run orchestrator and homepage checks and verify RED**
 
 Run: `node scripts/check-paint-journey-orchestrator.js && ./scripts/check-homepage-experience.sh`
 
-Expected: FAIL because the current controller does not send `velocity` or `flow`.
+Expected: FAIL because the current controller does not send `velocity` or `flow`, and particles do not expose a live impact callback.
 
 - [ ] **Step 3: Implement document-space source motion**
 
-Track the previous projected spout point and compute bounded document pixels per second from frame `delta`. Reset it at state boundaries and after hidden-tab resumes. Pass the velocity and pressure-derived flow to `setEmitter`; keep all dry-state calls inactive with zero flow. Do not change gesture timing, character movement, ladder behavior, or lazy loading.
+Track the previous projected spout point and compute bounded document pixels per second from frame `delta`. Reset it at state boundaries and after hidden-tab resumes. Pass the velocity and pressure-derived flow to `setEmitter`; keep all dry-state calls inactive with zero flow. Give particles an `onImpactBatch` callback that forwards bounded document-space local sources to `liquid.addImpactBatch`, and never writes normal-path impacts to the Canvas trail. Do not change gesture timing, character movement, ladder behavior, or lazy loading.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
@@ -189,7 +195,7 @@ Run: `./scripts/check-homepage-experience.sh && node --check assets/paint-journe
 
 Expected: the complete homepage suite passes.
 
-Commit: `git add assets/paint-journey.js scripts/check-paint-journey-orchestrator.js scripts/check-homepage-experience.sh && git commit -m "Drive paint from bucket motion"`
+Commit: `git add assets/paint-journey.js assets/paint-journey-particles.js scripts/check-paint-journey-orchestrator.js scripts/check-paint-journey-particles.js scripts/check-homepage-experience.sh && git commit -m "Drive paint from physical sources"`
 
 ### Task 4: Browser visual and runtime refinement
 
