@@ -433,6 +433,37 @@ function testFourBeatPourIsCausalAndContinuous() {
     `the four pour beats must keep every sampled joint below a 0.10-radian 60Hz step; observed ${maximumJointDelta}`);
 }
 
+function testCommittedPourUsesBothHandsAndLooksTowardTheFlow() {
+  const { character } = createCharacter();
+  const hand = character.root.getObjectByName('throwing-wrist');
+  const grip = character.root.getObjectByName('bucket-handle-grip');
+  const head = character.root.getObjectByName('head');
+  assert.ok(grip, 'the bucket must expose a physical grip target for the free hand');
+  for (let step = 0; step <= 12; step += 1) {
+    const progress = 0.4 + (0.42 * step / 12);
+    character.setPose('paint-swing', progress, 0);
+    const handGap = distance(worldPoint2D(hand), worldPoint2D(grip));
+    assert.ok(handGap <= 13.8,
+      `both hands must stay joined to the bucket through the committed pour at ${progress.toFixed(3)}; gap ${handGap.toFixed(2)}`);
+    assert.ok(Math.abs(head.rotation.y) >= 0.025,
+      'the painter must look toward the advancing liquid during commitment');
+  }
+}
+
+function testLandingStartsOnlyAtPositivePourFromExactSpout() {
+  const body = extractFunctionBody(controllerSource, 'updateLandingLiquid');
+  assert.match(body,
+    /var\s+pourAmount\s*=\s*characterPourAmount\(progress\)[\s\S]*?if\s*\(pourAmount\s*<=\s*0\.015\)[\s\S]*?return;[\s\S]*?if\s*\(!landingId\)\s*ensureLandingGesture\(documentPoint\)/,
+    'the controller must wait for positive physical bucket tilt before creating a landing gesture');
+  const configure = extractFunctionBody(controllerSource, 'configureLandingPath');
+  assert.match(configure, /landingOrigin\.x\s*=\s*documentPoint\.x/,
+    'the first broad gesture x origin must exactly match the projected paint spout');
+  assert.match(configure, /landingOrigin\.y\s*=\s*documentPoint\.y/,
+    'the first broad gesture y origin must exactly match the projected paint spout');
+  assert.doesNotMatch(configure, /landingOrigin\.[xy]\s*=\s*documentPoint\.[xy]\s*[+-]/,
+    'the first broad gesture must not visually offset itself from the physical spout');
+}
+
 function testOnlyThePhysicalSpoutCanEmit() {
   const { character } = createCharacter();
   const spout = character.root.getObjectByName('paint-spout');
@@ -739,6 +770,8 @@ testPaintLeavesFromTheBucketEdge();
 testFigureUsesCompactHumanProportions();
 testCharacterMaterialsStaySmoothAndMatte();
 testFourBeatPourIsCausalAndContinuous();
+testCommittedPourUsesBothHandsAndLooksTowardTheFlow();
+testLandingStartsOnlyAtPositivePourFromExactSpout();
 testOnlyThePhysicalSpoutCanEmit();
 testControllerUsesRequestedScaleAndRightLane();
 testSupportFootChangeUsesADoubleSupportBlend();

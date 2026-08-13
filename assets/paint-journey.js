@@ -479,8 +479,8 @@
   function configureLandingPath(documentPoint, canvasWidth, mobile, sequence) {
     var sweepDistance = canvasWidth * (mobile ? 0.82 : 0.86);
     var bend = (targetIndex % 2 === 0 ? -1 : 1) * (mobile ? 34 : 58);
-    landingOrigin.x = documentPoint.x - (mobile ? 2 : 8);
-    landingOrigin.y = documentPoint.y + 4;
+    landingOrigin.x = documentPoint.x;
+    landingOrigin.y = documentPoint.y;
     landingDestination.x = clamp(landingOrigin.x - sweepDistance, 28, canvasWidth - 28);
     landingDestination.y = clamp(documentPoint.y + bend, 28, documentHeight() - 28);
     landingControl.x = mix(landingOrigin.x, landingDestination.x, 0.46);
@@ -536,6 +536,12 @@
     character.paintSpout.getWorldPosition(bucketOrigin);
     var documentPoint = { x: 0, y: 0 };
     particlesToDocument(bucketOrigin, documentPoint);
+    var pourAmount = characterPourAmount(progress);
+    if (pourAmount <= 0.015) {
+      liquid.setEmitter({ active: false, origin: documentPoint, front: documentPoint, pressure: 0,
+        palettePhase: landingPalettePhase });
+      return;
+    }
     if (!landingId) ensureLandingGesture(documentPoint);
     syncActivePigmentHue();
     if (landingNeedsRebase && landingId) {
@@ -549,7 +555,6 @@
       });
       landingNeedsRebase = false;
     }
-    var pourAmount = characterPourAmount(progress);
     var gestureProgress = clamp((progress - 0.16) / 0.66, 0, 1);
     var causalReveal = ease(gestureProgress) * pourAmount;
     liquidModel.setReveal(landingId, causalReveal);

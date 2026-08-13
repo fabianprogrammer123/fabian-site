@@ -60,35 +60,28 @@
     function makeFaceTexture() {
       if (!document || typeof document.createElement !== 'function' || !THREE.CanvasTexture) return null;
       var canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
+      canvas.width = 128;
+      canvas.height = 128;
       var context = canvas.getContext && canvas.getContext('2d');
       if (!context) return null;
       context.fillStyle = '#f1ede3';
-      context.fillRect(0, 0, 64, 64);
-      context.fillStyle = '#c8c2b6';
-      for (var y = 4; y < 64; y += 8) {
-        for (var x = 4; x < 64; x += 8) {
-          context.beginPath();
-          context.arc(x + ((y / 8) % 2) * 2, y, 1.2, 0, TAU);
-          context.fill();
-        }
-      }
+      context.fillRect(0, 0, 128, 128);
       context.fillStyle = '#242628';
       context.beginPath();
-      context.arc(23, 28, 3.2, 0, TAU);
-      context.arc(41, 28, 3.2, 0, TAU);
+      context.arc(46, 55, 6.2, 0, TAU);
+      context.arc(82, 55, 6.2, 0, TAU);
       context.fill();
       context.beginPath();
-      context.moveTo(25, 41);
-      context.quadraticCurveTo(32, 47, 40, 40);
+      context.moveTo(50, 81);
+      context.quadraticCurveTo(64, 94, 80, 79);
       context.strokeStyle = '#242628';
-      context.lineWidth = 2.4;
+      context.lineWidth = 4.8;
       context.lineCap = 'round';
       context.stroke();
       context.beginPath();
-      context.arc(17, 36, 1.7, 0, TAU);
-      context.arc(47, 36, 1.7, 0, TAU);
+      context.fillStyle = '#d0c7b9';
+      context.arc(34, 72, 3.4, 0, TAU);
+      context.arc(94, 72, 3.4, 0, TAU);
       context.fill();
       var texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
@@ -219,6 +212,7 @@
     var handle = mesh('bucket-handle', new THREE.TorusGeometry(9.6, 0.9, 5, 16), charcoal, bucket, 0, 5, 0);
     handle.scale.y = 1.22;
     handle.rotation.x = PI / 2;
+    var handleGrip = joint('bucket-handle-grip', bucket, -11.5, 8, 0);
 
     scene.add(root);
 
@@ -406,14 +400,16 @@
       pelvis.rotation.z = anticipation * 0.025 - tipped * 0.035;
       spine.rotation.z = anticipation * 0.05 - lifted * 0.075 - tipped * 0.055;
       head.rotation.z = -anticipation * 0.025 + lifted * 0.035 + tipped * 0.025;
+      head.rotation.y = -(0.03 * lifted + 0.04 * tipped);
       bucketArm.shoulder.rotation.z += lifted * 0.65 + tipped * 0.22;
       bucketArm.shoulder.rotation.x = tipped * 0.12;
       bucketArm.elbow.rotation.z += lifted * 0.38 + tipped * 0.1;
       bucketArm.wrist.rotation.z = -lifted * 0.12 - tipped * 0.22;
+      bucketPose.position.y += lifted * 22;
       bucketPose.rotation.z += -lifted * 0.28 - tipped * 0.82;
       throwingArm.shoulder.rotation.z += lifted * 0.55 + tipped * 0.15;
-      throwingArm.elbow.rotation.z += lifted * 0.55 + tipped * 0.1;
-      throwingArm.wrist.rotation.z = -lifted * 0.12;
+      throwingArm.elbow.rotation.z += lifted * 0.78 + tipped * 0.12;
+      throwingArm.wrist.rotation.z = -lifted * 0.18;
       leftLeg.hip.rotation.z = -lifted * 0.08;
       rightLeg.hip.rotation.z = lifted * 0.08;
       leftLeg.knee.rotation.z = -lifted * 0.1;
