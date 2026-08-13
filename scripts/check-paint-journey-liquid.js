@@ -385,6 +385,10 @@ function testShaderContainsTheContinuousLiquidMaterial() {
     'internal pigment motion must advance along the authored path over time');
   assert.match(fieldSource, /fwidth\s*\(/,
     'contour transitions must use derivative antialiasing instead of hard posterized edges');
+  assert.match(fieldSource, /strataShadow[\s\S]{0,300}bandFraction/,
+    'each contour stratum must have a dark wet seam rather than one flat rainbow fill');
+  assert.match(fieldSource, /strataRidge[\s\S]{0,300}bandFraction/,
+    'each contour stratum must carry a narrow glossy crest');
   assert.match(fieldSource, /surfaceNormal/,
     'the wet surface must derive a stable light-facing normal from its closest centerline');
   assert.match(fieldSource, /surfaceNormal\s*=\s*normalize\(nearestProbePoint\s*-\s*nearestCenter/,
