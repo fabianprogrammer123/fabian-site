@@ -107,13 +107,14 @@
     var drag = Number.isFinite(Number(options.drag)) ? Math.max(0, Number(options.drag)) : 1.65;
     var pagePlaneZ = Number.isFinite(Number(options.pagePlaneZ)) ? Number(options.pagePlaneZ) : 0;
     var toDocument = typeof options.toDocument === 'function' ? options.toDocument : null;
+    var onImpactBatch = typeof options.onImpactBatch === 'function' ? options.onImpactBatch : null;
     var color = new THREE.Color();
     var scenePoint = new THREE.Vector3();
     var documentPoint = { x: 0, y: 0 };
     var stampPayload = { x: 0, y: 0, hue: 0, radius: 0, alpha: 0 };
     var collisionBatch = [];
     for (var batchIndex = 0; batchIndex < capacity; batchIndex += 1) {
-      collisionBatch.push({ x: 0, y: 0, hue: 0, radius: 0, alpha: 0 });
+      collisionBatch.push({ x: 0, y: 0, hue: 0, radius: 0, alpha: 0, velocity: { x: 0, y: 0 } });
     }
     var collisionCount = 0;
 
@@ -239,6 +240,8 @@
       payload.hue = particleHue[index];
       payload.radius = Math.min(mobile ? 9 : 13, 3 + speed * 0.018);
       payload.alpha = 0.48;
+      payload.velocity.x = velocityX[index];
+      payload.velocity.y = -velocityY[index];
       collisionCount += 1;
     }
 
@@ -277,7 +280,9 @@
       }
 
       if (collisionCount > 0) {
-        if (typeof trail.stampBatch === 'function') {
+        if (onImpactBatch) {
+          onImpactBatch(collisionBatch, collisionCount);
+        } else if (typeof trail.stampBatch === 'function') {
           trail.stampBatch(collisionBatch, collisionCount);
         } else {
           for (var stampIndex = 0; stampIndex < collisionCount; stampIndex += 1) {

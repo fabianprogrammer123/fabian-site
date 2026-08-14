@@ -145,9 +145,9 @@ assert.doesNotMatch(source, /hue:\s*paintHue/,
   'particle emission must never bypass the active landing palette with the drifting preview hue');
 requirePattern(/if\s*\(!landingId\)\s*ensureLandingGesture\(documentPoint\);[\s\S]{0,500}syncActivePigmentHue\(\)/,
   'the newly initialized landing palette must reach the bucket and particles before emission');
-requirePattern(/state\s*===\s*'bottom-paint'[\s\S]{0,220}updateLandingLiquid\(progress\)[\s\S]{0,180}emitStream/,
+requirePattern(/state\s*===\s*'bottom-paint'[\s\S]{0,220}updateLandingLiquid\(progress,\s*delta\)[\s\S]{0,180}emitStream/,
   'the opening surface gesture must lock its pigment before emitting bucket droplets');
-requirePattern(/state\s*===\s*'paint-swing'[\s\S]{0,220}updateLandingLiquid\(progress\)[\s\S]{0,180}emitStream/,
+requirePattern(/state\s*===\s*'paint-swing'[\s\S]{0,220}updateLandingLiquid\(progress,\s*delta\)[\s\S]{0,180}emitStream/,
   'each upper surface gesture must lock its pigment before emitting bucket droplets');
 requirePattern(/function\s+updateLiquidViewport\s*\(/,
   'the liquid surface must have one document-to-viewport update path');
@@ -447,9 +447,12 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
     staticDraws: 0,
     rendererRenders: 0,
     liquidAmbient: [],
+    liquidEmitters: [],
+    liquidImpactBatches: [],
     liquidUpdates: [],
     liquidViewports: [],
     modelReflows: [],
+    particleOptions: null,
     fallbackOptions: null
   };
   let now = 100;
@@ -591,7 +594,14 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
   };
   const liquid = {
     setViewport(viewport) { records.liquidViewports.push({ ...viewport }); return true; },
-    setEmitter() { return true; },
+    setEmitter(emitter) {
+      records.liquidEmitters.push(JSON.parse(JSON.stringify(emitter)));
+      return true;
+    },
+    addImpactBatch(batch) {
+      records.liquidImpactBatches.push(JSON.parse(JSON.stringify(batch)));
+      return batch.length;
+    },
     setMobile() {},
     update(delta, time) { records.liquidUpdates.push({ delta, time }); return true; },
     setAmbient(value) { records.liquidAmbient.push(value); },
@@ -601,7 +611,14 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
   let characterPose = '';
   const character = {
     paintSpout: {
-      getWorldPosition(output) { output.set(width - (mobile ? 46 : 84), 84, 0); return output; }
+      getWorldPosition(output) {
+        output.set(
+          width - (mobile ? 46 : 84) - characterProgress * 22,
+          84 + characterProgress * 10,
+          0
+        );
+        return output;
+      }
     },
     setScreenPose() {},
     setPose(name, progress) { characterPose = name; characterProgress = progress; },
@@ -636,7 +653,7 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
       createLiquidField() { return liquid; },
       createCharacter() { return character; },
       createLadder() { return ladder; },
-      createParticles() { return particles; }
+      createParticles(options) { records.particleOptions = options; return particles; }
     },
     PaintFinale: { startFallback(options) { records.fallbackOptions = options; } },
     innerWidth: width,
@@ -778,6 +795,78 @@ async function testCompletionRetainsOnlyAmbientLiquid() {
   harness.step(50);
   assert.ok(harness.records.rendererRenders > rendersBefore,
     'the retained liquid must continue rendering at its bounded ambient cadence');
+}
+
+async function testParticlesAndMovingSpoutFeedCausalFluidSources() {
+  const harness = await createLiveLifecycleHarness();
+  assert.equal(typeof harness.records.particleOptions.onImpactBatch, 'function',
+    'the live particle system must receive a fluid impact callback');
+
+  harness.records.particleOptions.onImpactBatch([
+    { x: 734, y: 1720, radius: 12, alpha: 0.48, velocity: { x: 900, y: -900 } },
+    { x: 741, y: 1714, radius: 8, alpha: 0.32, velocity: { x: 34, y: 52 } },
+    { x: 748, y: 1708, radius: 6, alpha: 0.24, velocity: { x: Infinity, y: NaN } }
+  ], 3);
+
+  assert.equal(harness.records.liquidImpactBatches.length, 1,
+    'one particle callback must enqueue one fluid impact batch');
+  const collisionBatch = harness.records.liquidImpactBatches[0];
+  assert.equal(collisionBatch.length, 3, 'the controller must preserve every causal collision');
+  assert.deepEqual(collisionBatch.map((impact) => impact.origin), [
+    { x: 734, y: 1720 },
+    { x: 741, y: 1714 },
+    { x: 748, y: 1708 }
+  ], 'particle collisions must remain in document coordinates');
+  assert.ok(collisionBatch.every((impact) => impact.radius >= 4 && impact.radius <= 20),
+    'fluid collision radii must stay inside the designed source range');
+  assert.ok(collisionBatch.every((impact) => impact.amount >= 0.06 && impact.amount <= 0.32),
+    'fluid collision mass must stay bounded');
+  assert.ok(collisionBatch.every((impact) =>
+    Number.isFinite(impact.velocity.x) && Number.isFinite(impact.velocity.y) &&
+    Math.hypot(impact.velocity.x, impact.velocity.y) <= 420.0001),
+  'malformed or extreme collision velocities must be finite and bounded before entering the solver');
+  assert.equal(new Set(collisionBatch.map((impact) => impact.palettePhase)).size, 1,
+    'every droplet from one landing must use its locked liquid pigment family');
+
+  harness.step(700);
+  harness.step(800);
+  harness.step(600);
+  harness.step(220);
+  const activeEmitters = harness.records.liquidEmitters.filter((emitter) => emitter.active);
+  assert.ok(activeEmitters.length >= 2, 'the pouring fixture must produce consecutive live emitters');
+  const movingEmitter = activeEmitters.find((emitter) =>
+    Math.hypot(emitter.velocity.x, emitter.velocity.y) > 0.01);
+  assert.ok(movingEmitter, 'projected bucket movement must reach the fluid emitter as document velocity');
+  assert.ok(Math.hypot(movingEmitter.velocity.x, movingEmitter.velocity.y) <= 500.0001,
+    'projected spout velocity must be bounded before entering the solver');
+  assert.equal(movingEmitter.flow, movingEmitter.pressure,
+    'the solver must receive the same normalized pour scalar as pressure and flow');
+
+  harness.fireWindow('resize');
+  harness.step(16);
+  harness.step(0);
+  harness.step(16);
+  const firstEmitterAfterReflow = harness.records.liquidEmitters.at(-1);
+  assert.deepEqual(firstEmitterAfterReflow.velocity, { x: 0, y: 0 },
+    'layout reflow must reset projected spout history before the next pour sample');
+
+  harness.document.hidden = true;
+  harness.fireDocument('visibilitychange');
+  harness.setNow(900000);
+  harness.document.hidden = false;
+  harness.fireDocument('visibilitychange');
+  harness.step(0);
+  const firstEmitterAfterVisibilityResume = harness.records.liquidEmitters.at(-1);
+  assert.deepEqual(firstEmitterAfterVisibilityResume.velocity, { x: 0, y: 0 },
+    'visibility resume must not inject a stale projected-velocity spike');
+
+  harness.step(1200);
+  const dryEmitter = harness.records.liquidEmitters.at(-1);
+  assert.equal(dryEmitter.active, false, 'a closed bucket must explicitly deactivate the fluid source');
+  assert.equal(dryEmitter.flow, 0, 'a closed bucket must send zero flow');
+  assert.equal(dryEmitter.pressure, 0, 'a closed bucket must send zero pressure');
+  assert.deepEqual(dryEmitter.velocity, { x: 0, y: 0 },
+    'a closed bucket must clear its source velocity');
 }
 
 async function testHiddenAmbientTimePausesWithoutJumping() {
@@ -1045,6 +1134,7 @@ async function testContextLossDuringLoadingUsesOneStaticFallback() {
 (async function runBehaviorChecks() {
   testExactBottomLazilyStartsAnimatedAndReducedMotionPaths();
   await testEscapeDuringModuleLoadingUsesAStaticFallback();
+  await testParticlesAndMovingSpoutFeedCausalFluidSources();
   await testCompletionRetainsOnlyAmbientLiquid();
   await testHiddenAmbientTimePausesWithoutJumping();
   await testHiddenInitializationWaitsForVisibility();

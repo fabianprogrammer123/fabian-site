@@ -87,7 +87,7 @@ const THREE = {
   SRGBColorSpace: 'srgb'
 };
 
-function createParticles() {
+function createParticles(options = {}) {
   const window = {};
   const scene = {
     children: [],
@@ -109,7 +109,11 @@ function createParticles() {
     }
   };
   vm.runInNewContext(source, { window, Math, Number, Object, Boolean, Float32Array, Error });
-  return { particles: window.PaintJourney.createParticles({ THREE, scene, trail, capacity: 12 }), scene, trail };
+  return {
+    particles: window.PaintJourney.createParticles({ THREE, scene, trail, capacity: 12, ...options }),
+    scene,
+    trail
+  };
 }
 
 function testClearImmediatelyRetiresActiveParticlesWithoutDisposal() {
@@ -183,9 +187,49 @@ function testSimultaneousCollisionsUseOneTrailBatch() {
   assert.equal(trail.stamps.length, 0, 'batched collisions must not fall back to per-droplet clipping');
 }
 
+function testFluidCollisionCallbackReplacesLegacyCanvasStamps() {
+  const impactBatches = [];
+  const { particles, trail } = createParticles({
+    toDocument(scenePoint, output) {
+      output.x = scenePoint.x + 100;
+      output.y = 500 - scenePoint.y;
+      return output;
+    },
+    onImpactBatch(points, count) {
+      impactBatches.push(Array.from(points).slice(0, count).map((point) => ({
+        ...point,
+        velocity: { ...point.velocity }
+      })));
+    }
+  });
+  particles.burst({
+    origin: { x: 5, y: 8, z: 1 },
+    velocity: { x: 24, y: -16, z: -120 },
+    count: 12,
+    hue: 30
+  });
+
+  particles.update(0.05);
+
+  assert.equal(impactBatches.length, 1,
+    'one collision frame must enter the fluid through one bounded callback batch');
+  assert.equal(impactBatches[0].length, 12,
+    'the fluid callback must receive every collision in the frame');
+  assert.equal(trail.batches.length, 0,
+    'fluid-owned collisions must not stamp the legacy Canvas batch');
+  assert.equal(trail.stamps.length, 0,
+    'fluid-owned collisions must not stamp per-droplet Canvas circles');
+  assert.ok(impactBatches[0].every((impact) => impact.x >= 100 && impact.y > 400),
+    'collision impacts must be projected into document coordinates before delivery');
+  assert.ok(impactBatches[0].every((impact) =>
+    Number.isFinite(impact.velocity.x) && Number.isFinite(impact.velocity.y)),
+  'each fluid impact must retain the causal projected particle velocity');
+}
+
 testClearImmediatelyRetiresActiveParticlesWithoutDisposal();
 testActivePaintUsesVisibleDropletScaleAndCohesivePigmentBurst();
 testResponsiveParticleModeUpdatesWithoutReallocatingThePool();
 testSimultaneousCollisionsUseOneTrailBatch();
+testFluidCollisionCallbackReplacesLegacyCanvasStamps();
 
 console.log('PASS: paint journey particle behavior');

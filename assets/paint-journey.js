@@ -88,6 +88,9 @@
   var previousBucketOrigin = null;
   var bucketVelocity = null;
   var paintVelocity = null;
+  var previousSpoutDocument = { x: 0, y: 0, valid: false };
+  var spoutDocumentVelocity = { x: 0, y: 0 };
+  var fluidImpactBatch = [];
   var liquidModel = null;
   var liquid = null;
   var staticContourDrawn = false;
@@ -114,6 +117,8 @@
     if (nextState === 'deploy-ladder') {
       connectorId = '';
     }
+    resetProjectedSpoutMotion();
+    if (nextState !== 'bottom-paint' && nextState !== 'paint-swing') setLiquidEmitterDry();
   }
 
   function clamp(value, minimum, maximum) {
@@ -528,6 +533,8 @@
     if (document.hidden) {
       hiddenAt = now;
       previousTimestamp = 0;
+      resetBucketMotion();
+      setLiquidEmitterDry();
       if (frameRequest) window.cancelAnimationFrame(frameRequest);
       frameRequest = 0;
       return;
@@ -572,6 +579,88 @@
   function resetBucketMotion() {
     if (previousBucketOrigin) previousBucketOrigin.set(0, 0, 0);
     if (bucketVelocity) bucketVelocity.set(0, 0, 0);
+    resetProjectedSpoutMotion();
+  }
+
+  function resetProjectedSpoutMotion() {
+    previousSpoutDocument.x = 0;
+    previousSpoutDocument.y = 0;
+    previousSpoutDocument.valid = false;
+    spoutDocumentVelocity.x = 0;
+    spoutDocumentVelocity.y = 0;
+  }
+
+  function updateProjectedSpoutMotion(documentPoint, delta) {
+    spoutDocumentVelocity.x = 0;
+    spoutDocumentVelocity.y = 0;
+    if (previousSpoutDocument.valid && delta > 0) {
+      spoutDocumentVelocity.x = (documentPoint.x - previousSpoutDocument.x) / delta;
+      spoutDocumentVelocity.y = (documentPoint.y - previousSpoutDocument.y) / delta;
+      var speed = Math.sqrt(
+        spoutDocumentVelocity.x * spoutDocumentVelocity.x +
+        spoutDocumentVelocity.y * spoutDocumentVelocity.y
+      );
+      if (speed > 500) {
+        spoutDocumentVelocity.x *= 500 / speed;
+        spoutDocumentVelocity.y *= 500 / speed;
+      }
+    }
+    previousSpoutDocument.x = documentPoint.x;
+    previousSpoutDocument.y = documentPoint.y;
+    previousSpoutDocument.valid = true;
+    return spoutDocumentVelocity;
+  }
+
+  function setLiquidEmitterDry(documentPoint) {
+    if (!liquid || typeof liquid.setEmitter !== 'function') return false;
+    var origin = documentPoint || (previousSpoutDocument.valid
+      ? previousSpoutDocument
+      : currentPoint);
+    return liquid.setEmitter({
+      active: false,
+      origin: { x: Number(origin.x) || 0, y: Number(origin.y) || 0 },
+      front: { x: Number(origin.x) || 0, y: Number(origin.y) || 0 },
+      pressure: 0,
+      flow: 0,
+      pour: 0,
+      velocity: { x: 0, y: 0 },
+      palettePhase: landingPalettePhase
+    });
+  }
+
+  function addParticleImpactBatch(items, count) {
+    if (!liquid || typeof liquid.addImpactBatch !== 'function' || !items) return 0;
+    var itemCount = Math.min(96, Math.max(0, Math.floor(Number(count) || 0)), items.length || 0);
+    var maximumX = documentWidth();
+    var maximumY = documentHeight();
+    fluidImpactBatch.length = 0;
+    for (var index = 0; index < itemCount; index += 1) {
+      var item = items[index];
+      if (!item) continue;
+      var sourceVelocity = item.velocity || {};
+      var velocityX = Number(sourceVelocity.x);
+      var velocityY = Number(sourceVelocity.y);
+      if (!Number.isFinite(velocityX)) velocityX = 0;
+      if (!Number.isFinite(velocityY)) velocityY = 0;
+      var speed = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+      if (speed > 420) {
+        velocityX *= 420 / speed;
+        velocityY *= 420 / speed;
+      }
+      fluidImpactBatch.push({
+        origin: {
+          x: clamp(Number(item.x) || 0, 0, maximumX),
+          y: clamp(Number(item.y) || 0, 0, maximumY)
+        },
+        velocity: { x: velocityX, y: velocityY },
+        radius: clamp((Number(item.radius) || 5) * 1.2, 4, 20),
+        amount: clamp((Number(item.alpha) || 0.24) * 0.52, 0.06, 0.32),
+        palettePhase: landingPalettePhase
+      });
+    }
+    var accepted = fluidImpactBatch.length ? liquid.addImpactBatch(fluidImpactBatch) : 0;
+    fluidImpactBatch.length = 0;
+    return accepted;
   }
 
   function landingGeometry(documentPoint, canvasWidth, mobile, sequence, levelIndex) {
@@ -701,16 +790,16 @@
     return landingId;
   }
 
-  function updateLandingLiquid(progress) {
+  function updateLandingLiquid(progress, delta) {
     if (!liquid || !liquidModel || !bucketOrigin || !character) return;
     scene.updateMatrixWorld(true);
     character.paintSpout.getWorldPosition(bucketOrigin);
     var documentPoint = { x: 0, y: 0 };
     particlesToDocument(bucketOrigin, documentPoint);
+    updateProjectedSpoutMotion(documentPoint, delta);
     var pourAmount = characterPourAmount(progress);
     if (pourAmount <= 0.015) {
-      liquid.setEmitter({ active: false, origin: documentPoint, front: documentPoint, pressure: 0,
-        palettePhase: landingPalettePhase });
+      setLiquidEmitterDry(documentPoint);
       return;
     }
     if (!landingId) ensureLandingGesture(documentPoint);
@@ -740,6 +829,12 @@
         y: mix(landingOrigin.y, landingDestination.y, ease(gestureProgress))
       },
       pressure: pourAmount,
+      flow: pourAmount,
+      pour: pourAmount,
+      velocity: {
+        x: spoutDocumentVelocity.x,
+        y: spoutDocumentVelocity.y
+      },
       palettePhase: landingPalettePhase
     });
   }
@@ -786,8 +881,7 @@
       width: isMobileViewport() ? 48 : 68
     });
     liquidModel.setReveal(connectorId, clamp(progress, 0, 1));
-    liquid.setEmitter({ active: false, origin: documentPoint, front: documentPoint, pressure: 0,
-      palettePhase: landingPalettePhase });
+    setLiquidEmitterDry(documentPoint);
   }
 
   function updateLadderSpan(progress, anchor) {
@@ -925,7 +1019,7 @@
     } else if (state === 'bottom-paint') {
       positionCharacter(stateTo);
       character.setPose('paint-swing', progress, 1);
-      updateLandingLiquid(progress);
+      updateLandingLiquid(progress, delta);
       var bottomPourAmount = characterPourAmount(progress);
       if (bottomPourAmount > 0.04) emitStream(PAINT_RATES.lip, false, progress, delta);
       if (bottomPourAmount > 0.78 && !paintBurstEmitted) {
@@ -953,7 +1047,7 @@
     } else if (state === 'paint-swing') {
       positionCharacter(stateTo);
       character.setPose('paint-swing', progress, 0);
-      updateLandingLiquid(progress);
+      updateLandingLiquid(progress, delta);
       var swingPourAmount = characterPourAmount(progress);
       if (swingPourAmount > 0.04) emitStream(PAINT_RATES.lip, false, progress, delta);
       if (swingPourAmount > 0.78 && !paintBurstEmitted) {
@@ -983,8 +1077,7 @@
   function settleLiquidLayer() {
     if (!renderer || !liquid || actorLayerDisposed) return;
     if (trail && typeof trail.freeze === 'function') trail.freeze();
-    liquid.setEmitter({ active: false, origin: currentPoint, front: currentPoint, pressure: 0,
-      palettePhase: landingPalettePhase });
+    setLiquidEmitterDry(currentPoint);
     liquid.setAmbient(true);
     cleanupActorLayer();
     removeActiveRuntimeListeners();
@@ -1238,7 +1331,8 @@
       mobile: mobile,
       capacity: 600,
       pagePlaneZ: 0,
-      toDocument: particlesToDocument
+      toDocument: particlesToDocument,
+      onImpactBatch: addParticleImpactBatch
     });
     responsiveMobile = mobile;
     ladderBottom = new THREE.Vector3();
