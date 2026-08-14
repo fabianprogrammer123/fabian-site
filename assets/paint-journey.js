@@ -847,22 +847,19 @@
   }
 
   function updateClimbConnector(progress) {
-    if (!liquidModel || !liquid || !character || !bucketOrigin || targetIndex <= 0) return;
-    scene.updateMatrixWorld(true);
-    character.paintSpout.getWorldPosition(bucketOrigin);
-    var documentPoint = { x: 0, y: 0 };
-    particlesToDocument(bucketOrigin, documentPoint);
+    if (!liquidModel || !liquid || targetIndex <= 0) return;
     var source = waypoints[targetIndex - 1];
     var target = waypoints[targetIndex];
     if (!source || !target) return;
     if (!connectorId) {
       connectorId = 'connector:' + source.name + ':' + target.name;
-      connectorOrigin.x = landingId ? landingOrigin.x : source.x;
-      connectorOrigin.y = landingId ? landingOrigin.y : source.y;
-      connectorControl.x = connectorOrigin.x - (isMobileViewport() ? 16 : 28);
-      connectorControl.y = mix(connectorOrigin.y, target.y, 0.5);
-      connectorDestination.x = documentPoint.x;
-      connectorDestination.y = documentPoint.y;
+      connectorOrigin.x = source.x;
+      connectorOrigin.y = source.y;
+      connectorDestination.x = target.x;
+      connectorDestination.y = target.y;
+      connectorControl.x = mix(connectorOrigin.x, connectorDestination.x, 0.48) -
+        (isMobileViewport() ? 14 : 24);
+      connectorControl.y = mix(connectorOrigin.y, connectorDestination.y, 0.5);
       liquidModel.upsertGesture({
         id: connectorId,
         from: { x: connectorOrigin.x, y: connectorOrigin.y },
@@ -876,19 +873,8 @@
         kind: 1
       });
     }
-    connectorDestination.x = documentPoint.x;
-    connectorDestination.y = documentPoint.y;
-    connectorControl.x = mix(connectorOrigin.x, connectorDestination.x, 0.48) -
-      (isMobileViewport() ? 14 : 24);
-    connectorControl.y = mix(connectorOrigin.y, connectorDestination.y, 0.5);
-    liquidModel.reflow(connectorId, {
-      from: { x: connectorOrigin.x, y: connectorOrigin.y },
-      control: { x: connectorControl.x, y: connectorControl.y },
-      to: { x: connectorDestination.x, y: connectorDestination.y },
-      width: connectorWidth(isMobileViewport())
-    });
     liquidModel.setReveal(connectorId, clamp(progress, 0, 1));
-    setLiquidEmitterDry(documentPoint);
+    setLiquidEmitterDry(currentPoint);
   }
 
   function updateLadderSpan(progress, anchor) {

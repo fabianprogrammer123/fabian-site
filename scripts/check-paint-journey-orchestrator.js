@@ -9,6 +9,10 @@ const vm = require('node:vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'assets/paint-journey.js'), 'utf8');
+const climbConnectorSource = source.slice(
+  source.indexOf('function updateClimbConnector'),
+  source.indexOf('function updateLadderSpan')
+);
 
 function requirePattern(pattern, message) {
   assert.match(source, pattern, message);
@@ -133,8 +137,14 @@ requirePattern(/function\s+updateClimbConnector\s*\(/,
   'each climb must grow one stable connector from the bucket lane');
 requirePattern(/['"]connector:['"]/,
   'climb gesture IDs must be semantic and stable');
-requirePattern(/liquidModel\.reflow\(connectorId,/,
-  'a climb connector must update geometry in place instead of adding segments');
+requirePattern(/connectorOrigin\.x\s*=\s*source\.x[\s\S]{0,180}connectorOrigin\.y\s*=\s*source\.y/,
+  'a climb connector must begin at its stable semantic source waypoint');
+requirePattern(/connectorDestination\.x\s*=\s*target\.x[\s\S]{0,180}connectorDestination\.y\s*=\s*target\.y/,
+  'a climb connector must end at its stable target lane instead of following the moving bucket');
+assert.doesNotMatch(climbConnectorSource, /liquidModel\.reflow\(/,
+  'ordinary climb frames must never classify bucket movement as a responsive layout reflow');
+assert.equal((climbConnectorSource.match(/liquidModel\.setReveal\(/g) || []).length, 1,
+  'ordinary climb frames must grow one frozen connector only through reveal progress');
 requirePattern(/typeof\s+character\.getPourAmount\s*===\s*['"]function['"][\s\S]{0,160}character\.getPourAmount\(\)/,
   'liquid reveal must use the character bucket tilt when that causal API is available');
 requirePattern(/liquidModel\.setReveal\(landingId,\s*causalReveal\)/,
@@ -456,6 +466,7 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
     liquidUpdates: [],
     liquidViewports: [],
     modelReflows: [],
+    modelLayoutRevision: 0,
     particleOptions: null,
     fallbackOptions: null
   };
@@ -589,6 +600,7 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
       if (!gesture) return null;
       Object.assign(gesture, JSON.parse(JSON.stringify(geometry)));
       records.modelReflows.push({ id, geometry: JSON.parse(JSON.stringify(geometry)) });
+      records.modelLayoutRevision += 1;
       return JSON.parse(JSON.stringify(gesture));
     },
     getGesture(id) {
@@ -739,6 +751,7 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
     animationFrames,
     resizeObservers,
     completeJourney,
+    advanceCurrentState,
     step,
     setNow(value) { now = value; },
     shiftLevel(name, amount) {
@@ -758,6 +771,51 @@ async function createLiveLifecycleHarness({ mobile = false, hidden = false } = {
       return [...(store.get(type) || [])];
     }
   };
+}
+
+async function testClimbFramesRevealOneFrozenSemanticConnector() {
+  const harness = await createLiveLifecycleHarness();
+  harness.advanceCurrentState();
+  harness.advanceCurrentState();
+  harness.advanceCurrentState();
+  assert.equal(harness.window.PaintJourneyState, 'climb-ladder',
+    'the connector fixture must enter its first climb');
+
+  harness.step(1);
+  const connectorId = 'connector:bottom:thoughts';
+  const connectorBefore = JSON.parse(JSON.stringify(harness.gestures.get(connectorId)));
+  assert.deepEqual({
+    from: connectorBefore.from,
+    control: connectorBefore.control,
+    to: connectorBefore.to
+  }, {
+    from: { x: 918, y: 1982 },
+    control: { x: 894, y: 1818.5 },
+    to: { x: 918, y: 1655 }
+  }, 'connector geometry must be authored once from the semantic source and target lane');
+
+  const layoutRevisionBefore = harness.records.modelLayoutRevision;
+  harness.records.modelReflows.length = 0;
+  for (let frame = 0; frame < 120; frame += 1) harness.step(10);
+
+  const connectorAfter = harness.gestures.get(connectorId);
+  assert.equal(harness.window.PaintJourneyState, 'climb-ladder',
+    'the 120-frame sample must remain inside the active climb');
+  assert.deepEqual({
+    from: connectorAfter.from,
+    control: connectorAfter.control,
+    to: connectorAfter.to
+  }, {
+    from: connectorBefore.from,
+    control: connectorBefore.control,
+    to: connectorBefore.to
+  }, '120 climb frames must leave the frozen quadratic geometry unchanged');
+  assert.equal(harness.records.modelLayoutRevision, layoutRevisionBefore,
+    '120 climb frames must not advance the model layout revision');
+  assert.equal(harness.records.modelReflows.length, 0,
+    '120 climb frames must not call the responsive reflow path');
+  assert.ok(connectorAfter.reveal > connectorBefore.reveal,
+    'the frozen connector must still grow monotonically with climb progress');
 }
 
 async function testCompletionRetainsOnlyAmbientLiquid() {
@@ -1147,6 +1205,7 @@ async function testContextLossDuringLoadingUsesOneStaticFallback() {
   testExactBottomLazilyStartsAnimatedAndReducedMotionPaths();
   await testEscapeDuringModuleLoadingUsesAStaticFallback();
   await testParticlesAndMovingSpoutFeedCausalFluidSources();
+  await testClimbFramesRevealOneFrozenSemanticConnector();
   await testCompletionRetainsOnlyAmbientLiquid();
   await testHiddenAmbientTimePausesWithoutJumping();
   await testHiddenInitializationWaitsForVisibility();
