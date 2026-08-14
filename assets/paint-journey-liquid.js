@@ -17,6 +17,7 @@
   var MOBILE_MAX_STEPS = 1;
   var DESKTOP_AMBIENT_INTERVAL = 1 / 24;
   var MOBILE_AMBIENT_INTERVAL = 1 / 15;
+  var QUIET_SETTLE_SECONDS = 12;
 
   var PASS_VERTEX_SHADER = [
     'varying vec2 vUv;',
@@ -101,9 +102,14 @@
     '      vec4 velocityPhase = uImpactVelocityPhase[impactIndex];',
     '      vec2 offset = documentPoint - pointRadius.xy;',
     '      float radius = max(pointRadius.z, 2.0);',
-    '      float core = exp(-dot(offset, offset) / (radius * radius * 0.54));',
-    '      float brokenEdge = 0.86 + 0.14 * sin(offset.x * 0.071 + offset.y * 0.047 + velocityPhase.w * 19.0);',
-    '      float deposit = core * max(pointRadius.w, 0.0) * brokenEdge;',
+    '      vec2 poolPoint = offset / radius;',
+    '      float phaseAngle = velocityPhase.w * 6.2831853;',
+    '      float edgeNoise = 0.035 * sin(atan(poolPoint.y, poolPoint.x) * 5.0 + phaseAngle) +',
+    '        0.022 * sin(atan(poolPoint.y, poolPoint.x) * 9.0 - phaseAngle * 1.7);',
+    '      float superellipse = pow(abs(poolPoint.x), 3.25) + pow(abs(poolPoint.y), 3.25);',
+    '      float poolEdge = 1.0 - smoothstep(0.80 + edgeNoise, 1.04 + edgeNoise, superellipse);',
+    '      float flatCore = 1.0 - smoothstep(0.24, 1.0, superellipse);',
+    '      float deposit = poolEdge * max(pointRadius.w, 0.0) * (0.88 + 0.12 * flatCore);',
     '      pigment.rgb += pigmentAbsorption(velocityPhase.z) * deposit;',
     '      pigment.a += deposit;',
     '    }',
@@ -198,8 +204,8 @@
     '  vec2 velocity = texture2D(uVelocity, vUv).xy;',
     '  float thickness = texture2D(uPigment, vUv).a;',
     '  float dripMobility = smoothstep(0.018, 0.95, thickness) * (1.0 - 0.28 * smoothstep(1.4, 3.4, thickness));',
-    '  velocity.y -= uGravity * (0.16 + 0.72 * dripMobility);',
-    '  velocity.x += sin(vUv.y * 91.0 + thickness * 5.7) * 5.2 * dripMobility;',
+    '  velocity.y -= uGravity * uDelta * dripMobility;',
+    '  velocity.x += sin(vUv.y * 91.0 + thickness * 5.7) * 1.4 * dripMobility;',
     '  vec2 backtrace = clamp(vUv - velocity * uDelta / uDocumentSize, vec2(0.0), vec2(1.0));',
     '  vec4 center = texture2D(uPigment, backtrace);',
     '  vec4 left = texture2D(uPigment, backtrace - vec2(uPigmentTexel.x, 0.0));',
@@ -207,8 +213,8 @@
     '  vec4 low = texture2D(uPigment, backtrace - vec2(0.0, uPigmentTexel.y));',
     '  vec4 high = texture2D(uPigment, backtrace + vec2(0.0, uPigmentTexel.y));',
     '  vec4 mixedPigment = (left + right + low + high) * 0.25;',
-    '  float mixing = (0.018 + 0.045 * dripMobility) * uDelta * 30.0;',
-    '  vec4 pigment = mix(center, mixedPigment, clamp(mixing, 0.0, 0.12));',
+    '  float pigmentDiffusion = (0.0015 + 0.0035 * dripMobility) * uDelta * 30.0;',
+    '  vec4 pigment = mix(center, mixedPigment, clamp(pigmentDiffusion, 0.0, 0.006));',
     '  float settling = mix(0.99982, 0.99996, smoothstep(0.2, 2.0, pigment.a));',
     '  pigment *= pow(settling, uDelta * 30.0);',
     '  gl_FragColor = max(pigment, vec4(0.0));',
@@ -225,7 +231,7 @@
     'vec3 kubelkaMunkReflectance(vec3 absorption, vec3 scattering, float opticalDepth) {',
     '  vec3 ratio = absorption / max(scattering, vec3(0.001));',
     '  vec3 infiniteLayer = 1.0 + ratio - sqrt(max(ratio * ratio + 2.0 * ratio, vec3(0.0)));',
-    '  float coverage = 1.0 - exp(-opticalDepth * 2.35);',
+    '  float coverage = 1.0 - exp(-opticalDepth * 4.8);',
     '  return mix(vec3(0.992, 0.987, 0.976), clamp(infiniteLayer, 0.0, 1.0), coverage);',
     '}',
     'void main() {',
@@ -246,7 +252,7 @@
     '    1.0',
     '  ));',
     '  vec3 absorption = pigment.rgb / max(thickness, 0.035);',
-    '  vec3 scattering = vec3(0.74, 0.78, 0.84) + 0.18 * clamp(absorption, 0.0, 1.0);',
+    '  vec3 scattering = vec3(0.46, 0.50, 0.56) + 0.10 * clamp(absorption, 0.0, 1.0);',
     '  vec3 color = kubelkaMunkReflectance(absorption, scattering, thickness);',
     '  vec3 lightDirection = normalize(vec3(-0.42, 0.56, 0.71));',
     '  vec3 halfDirection = normalize(lightDirection + vec3(0.0, 0.0, 1.0));',
@@ -255,11 +261,11 @@
     '  float specularPower = mix(24.0, 118.0, 1.0 - wetRoughness);',
     '  float wetSpecular = pow(max(dot(thicknessNormal, halfDirection), 0.0), specularPower);',
     '  float thicknessGradient = length(vec2(rightThickness - leftThickness, highThickness - lowThickness));',
-    '  float meniscus = smoothstep(0.012, 0.19, thicknessGradient) * smoothstep(0.012, 0.20, thickness);',
-    '  float bodyAlpha = smoothstep(0.012, 0.18, thickness);',
+    '  float meniscus = smoothstep(0.035, 0.22, thicknessGradient) * smoothstep(0.025, 0.22, thickness);',
+    '  float bodyAlpha = smoothstep(0.028, 0.12, thickness);',
     '  color *= diffuseLight * mix(0.88, 1.04, smoothstep(0.1, 1.8, thickness));',
     '  color = mix(color, vec3(0.018, 0.022, 0.035), meniscus * 0.16);',
-    '  color += vec3(1.0, 0.965, 0.91) * (wetSpecular * 0.34 + meniscus * wetSpecular * 0.46);',
+    '  color += vec3(1.0, 0.965, 0.91) * (wetSpecular * 0.16 + meniscus * wetSpecular * 0.24);',
     '  float screenX = vUv.x * uViewport.z;',
     '  float readingLane = smoothstep(uContentRect.x - uContentRect.z, uContentRect.x + uContentRect.z, screenX) *',
     '    (1.0 - smoothstep(uContentRect.y - uContentRect.z, uContentRect.y + uContentRect.z, screenX));',
@@ -503,6 +509,8 @@
       origin: { x: 0, y: 0 },
       front: { x: 0, y: 0 },
       pressure: 0,
+      flow: 0,
+      velocity: { x: 0, y: 0 },
       palettePhase: 0
     };
     var pendingImpacts = [];
@@ -516,6 +524,15 @@
     var disposed = false;
     var timeAccumulator = 0;
     var ambientAccumulator = 0;
+    var quietSeconds = 0;
+    var settled = false;
+    var compositeDirty = true;
+
+    function wakeSolver() {
+      quietSeconds = 0;
+      settled = false;
+      ambientAccumulator = 0;
+    }
 
     function fittedDimensions(width, height, scale, pixelCap) {
       var targetWidth = Math.max(1, Math.floor(width * scale));
@@ -607,7 +624,11 @@
       contentRectUniform[3] = viewport.contentOpacity;
       composite.position.set(viewport.width * 0.5, viewport.height * 0.5, 4);
       composite.scale.set(viewport.width, viewport.height, 1);
-      if (documentChanged) resizeDocumentTargets();
+      compositeDirty = true;
+      if (documentChanged) {
+        resizeDocumentTargets();
+        wakeSolver();
+      }
       return true;
     }
 
@@ -618,16 +639,27 @@
       var front = copyPoint(emitter.front || emitter.origin, origin);
       var active = Boolean(emitter.active);
       var pressure = clamp(finite(emitter.pressure, 0), 0, 1);
+      var flow = clamp(finite(emitter.flow, pressure), 0, 1);
+      var velocity = copyPoint(emitter.velocity);
+      var velocityMagnitude = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+      if (velocityMagnitude > 500) {
+        velocity.x *= 500 / velocityMagnitude;
+        velocity.y *= 500 / velocityMagnitude;
+      }
       var palettePhase = finite(emitter.palettePhase, emitterState.palettePhase);
       var changed = emitterState.active !== active || emitterState.origin.x !== origin.x ||
         emitterState.origin.y !== origin.y || emitterState.front.x !== front.x ||
-        emitterState.front.y !== front.y || emitterState.pressure !== pressure ||
+        emitterState.front.y !== front.y || emitterState.pressure !== pressure || emitterState.flow !== flow ||
+        emitterState.velocity.x !== velocity.x || emitterState.velocity.y !== velocity.y ||
         emitterState.palettePhase !== palettePhase;
       emitterState.active = active;
       emitterState.origin = origin;
       emitterState.front = front;
       emitterState.pressure = pressure;
+      emitterState.flow = flow;
+      emitterState.velocity = velocity;
       emitterState.palettePhase = palettePhase;
+      if (active && flow > 0.01) wakeSolver();
       return changed;
     }
 
@@ -653,6 +685,7 @@
         pendingImpacts.push(normalized);
         accepted += 1;
       }
+      if (accepted) wakeSolver();
       return accepted;
     }
 
@@ -663,8 +696,8 @@
       var intervalLength = Math.sqrt(tangent.x * tangent.x + tangent.y * tangent.y) *
         (endReveal - startReveal);
       var width = Math.max(1, finite(gesture.width, 40) * finite(gesture.spread, 1));
-      var spacing = Math.max(18, width * 0.18);
-      var sampleCount = clamp(Math.ceil(intervalLength / spacing), 1, 48);
+      var spacing = Math.max(7, width * 0.075);
+      var sampleCount = clamp(Math.ceil(intervalLength / spacing), 1, 64);
       for (var sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
         var progress = startReveal + (endReveal - startReveal) *
           ((sampleIndex + 0.5) / sampleCount);
@@ -673,18 +706,28 @@
         var tangentLength = Math.max(1, Math.sqrt(
           localTangent.x * localTangent.x + localTangent.y * localTangent.y
         ));
+        var tangentX = localTangent.x / tangentLength;
+        var tangentY = localTangent.y / tangentLength;
+        var variationSeed = finite(gesture.seed, 0) * 1.913 + progress * 47.71 + sampleIndex * 2.17;
+        var lateralJitter = Math.sin(variationSeed * 1.73) * width * 0.052 +
+          Math.sin(variationSeed * 0.61) * width * 0.025;
+        point.x += -tangentY * lateralJitter;
+        point.y += tangentX * lateralJitter;
         var landingGrowth = gesture.kind < 0.5 ? (0.34 + 0.66 * Math.min(1, progress * 2.8)) : 0.78;
+        var radiusVariation = 0.84 + 0.18 * (0.5 + 0.5 * Math.sin(variationSeed));
         pendingImpacts.push({
           origin: point,
           velocity: {
-            x: localTangent.x / tangentLength * 112,
-            y: localTangent.y / tangentLength * 112 + 58
+            x: tangentX * 67,
+            y: tangentY * 67 + 18
           },
-          radius: clamp(width * 0.23 * landingGrowth, 12, 180),
-          amount: clamp(0.19 + width / 900, 0.2, 0.62),
-          palettePhase: finite(gesture.palettePhase, 0) + progress * 0.34 + sampleIndex * 0.009
+          radius: clamp(width * 0.17 * landingGrowth * radiusVariation, 9, 150),
+          amount: clamp(0.135 + width / 1250, 0.16, 0.46),
+          palettePhase: finite(gesture.palettePhase, 0) + progress * 0.34 +
+            Math.sin(variationSeed * 0.43) * 0.014
         });
       }
+      wakeSolver();
       lastRevealIntervals.push({ id: gesture.id, from: startReveal, to: endReveal });
     }
 
@@ -693,7 +736,10 @@
       lastRevealIntervals.length = 0;
       if (!packet) return;
       var layoutChanged = lastLayoutRevision >= 0 && packet.layoutRevision !== lastLayoutRevision;
-      if (layoutChanged) clearRequested = true;
+      if (layoutChanged) {
+        clearRequested = true;
+        wakeSolver();
+      }
       if (clearRequested) knownReveal = Object.create(null);
       if (packet.revision !== lastPacketRevision || clearRequested) {
         var nextKnownReveal = Object.create(null);
@@ -775,23 +821,36 @@
     }
 
     function emitterImpact() {
-      if (!emitterState.active || emitterState.pressure <= 0.01) return null;
+      if (!emitterState.active || emitterState.flow <= 0.01) return null;
       var directionX = emitterState.front.x - emitterState.origin.x;
       var directionY = emitterState.front.y - emitterState.origin.y;
       var directionLength = Math.max(1, Math.sqrt(directionX * directionX + directionY * directionY));
+      var pourSpeed = 54 + emitterState.pressure * 58;
+      var velocityX = directionX / directionLength * pourSpeed + emitterState.velocity.x * 0.26;
+      var velocityY = directionY / directionLength * pourSpeed + 22 + emitterState.velocity.y * 0.26;
+      var momentumMagnitude = Math.sqrt(velocityX * velocityX + velocityY * velocityY);
+      if (momentumMagnitude > 260) {
+        velocityX *= 260 / momentumMagnitude;
+        velocityY *= 260 / momentumMagnitude;
+      }
       return {
         origin: copyPoint(emitterState.origin),
         velocity: {
-          x: directionX / directionLength * (150 + emitterState.pressure * 210),
-          y: directionY / directionLength * (150 + emitterState.pressure * 210) + 96
+          x: velocityX,
+          y: velocityY
         },
-        radius: 11 + emitterState.pressure * 24,
-        amount: 0.16 + emitterState.pressure * 0.42,
+        radius: 10 + emitterState.flow * 22,
+        amount: 0.12 + emitterState.flow * 0.38,
         palettePhase: emitterState.palettePhase
       };
     }
 
     function simulationStep() {
+      var impacts = pendingImpacts.splice(0, pendingImpacts.length);
+      var localEmitterImpact = emitterImpact();
+      if (localEmitterImpact) impacts.push(localEmitterImpact);
+      if (impacts.length) applyImpactSources(impacts);
+
       advectVelocityMaterial.uniforms.uVelocity.value = velocityRead.texture;
       advectVelocityMaterial.uniforms.uPigment.value = pigmentRead.texture;
       advectVelocityMaterial.uniforms.uDelta.value = fixedStep;
@@ -817,16 +876,27 @@
       renderPass(advectPigmentMaterial, pigmentWrite);
       swapPigment();
 
-      var impacts = pendingImpacts.splice(0, pendingImpacts.length);
-      var localEmitterImpact = emitterImpact();
-      if (localEmitterImpact) impacts.push(localEmitterImpact);
-      if (impacts.length) applyImpactSources(impacts);
     }
 
     function update(delta) {
       if (disposed || frozen) return false;
       var elapsed = clamp(finite(delta, 0), 0, 0.25);
       collectSimulationSources();
+      var sourceActive = clearRequested || pendingImpacts.length ||
+        (emitterState.active && emitterState.flow > 0.01);
+      if (sourceActive) {
+        wakeSolver();
+      } else if (!settled) {
+        quietSeconds += elapsed;
+        if (quietSeconds >= QUIET_SETTLE_SECONDS) settled = true;
+      }
+      if (settled) {
+        if (compositeDirty) {
+          compositeDirty = false;
+          return true;
+        }
+        return false;
+      }
       timeAccumulator += elapsed;
       if (ambient) {
         ambientAccumulator += elapsed;
@@ -842,7 +912,8 @@
         timeAccumulator = 0;
       } else {
         stepCount = Math.floor((timeAccumulator + 0.000001) / fixedStep);
-        if ((clearRequested || pendingImpacts.length || emitterState.active) && stepCount < 1) stepCount = 1;
+        if ((clearRequested || pendingImpacts.length ||
+          (emitterState.active && emitterState.flow > 0.01)) && stepCount < 1) stepCount = 1;
         stepCount = Math.min(maximumSteps, stepCount);
         if (stepCount < 1) return false;
         timeAccumulator = Math.max(0, timeAccumulator - stepCount * fixedStep);
@@ -855,6 +926,7 @@
       } finally {
         renderer.setRenderTarget(previousTarget);
       }
+      compositeDirty = false;
       return true;
     }
 
