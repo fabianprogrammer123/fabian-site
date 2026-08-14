@@ -125,9 +125,11 @@ requirePattern(/liquid\s*=\s*PaintJourney\.createLiquidField\(\{[\s\S]{0,300}mod
   'the live runtime must bind one liquid field to the shared Three.js scene');
 requirePattern(/function\s+ensureLandingGesture\s*\(/,
   'each semantic landing must be represented by one stable liquid gesture');
-requirePattern(/function\s+landingWidth\s*\([^)]*\)[\s\S]{0,220}0\.09[\s\S]{0,220}mobile\s*\?\s*70\s*:\s*86[\s\S]{0,180}mobile\s*\?\s*96\s*:\s*132/,
+requirePattern(/function\s+landingWidth\s*\([^)]*\)[\s\S]{0,220}mobile\s*\?\s*0\.13\s*:\s*0\.082[\s\S]{0,220}mobile\s*\?\s*46\s*:\s*80[\s\S]{0,180}mobile\s*\?\s*60\s*:\s*118/,
   'landing rivers use a narrow responsive width that leaves substantial white page space');
-requirePattern(/function\s+connectorWidth\s*\([^)]*\)[\s\S]{0,100}mobile\s*\?\s*22\s*:\s*28/,
+requirePattern(/desktopSweepRatios\s*=\s*\[0\.72,\s*0\.52,\s*0\.64,\s*0\.44,\s*0\.60,\s*0\.75\]/,
+  'landing rivers vary their reach instead of forming six uniform page-wide bars');
+requirePattern(/function\s+connectorWidth\s*\([^)]*\)[\s\S]{0,100}mobile\s*\?\s*16\s*:\s*28/,
   'vertical connectors stay slender enough to read as liquid necks, not scalloped columns');
 requirePattern(/landingIndex\s*=\s*state\s*===\s*'bottom-paint'\s*\?\s*0\s*:\s*targetIndex/,
   'the opening bottom pour and the first upper landing must keep distinct stable gesture IDs');
@@ -983,7 +985,7 @@ async function testSettledScrollResizeAndDetailsReflow() {
     .filter((gesture) => gesture.id.startsWith('landing:')).map((gesture) => gesture.width);
   const connectorWidths = [...harness.gestures.values()]
     .filter((gesture) => gesture.id.startsWith('connector:')).map((gesture) => gesture.width);
-  assert.ok(landingWidths.every((width) => width >= 86 && width <= 132),
+  assert.ok(landingWidths.every((width) => width >= 80 && width <= 118),
     'desktop landings remain narrow, curated rivers');
   assert.ok(connectorWidths.every((width) => width >= 26 && width <= 30),
     'desktop connectors remain controlled liquid necks');

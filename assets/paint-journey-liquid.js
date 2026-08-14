@@ -3,13 +3,14 @@
 
   var PaintJourney = window.PaintJourney = window.PaintJourney || {};
   var IMPACT_LIMIT = 16;
+  var REVEAL_IMPACT_LIMIT = 512;
   var DESKTOP_VELOCITY_SCALE = 0.18;
   var DESKTOP_VELOCITY_CAP = 300000;
-  var DESKTOP_PIGMENT_SCALE = 0.30;
+  var DESKTOP_PIGMENT_SCALE = 0.38;
   var DESKTOP_PIGMENT_CAP = 720000;
   var MOBILE_VELOCITY_SCALE = 0.14;
   var MOBILE_VELOCITY_CAP = 160000;
-  var MOBILE_PIGMENT_SCALE = 0.38;
+  var MOBILE_PIGMENT_SCALE = 0.46;
   var MOBILE_PIGMENT_CAP = 420000;
   var DESKTOP_FIXED_STEP = 1 / 30;
   var MOBILE_FIXED_STEP = 1 / 20;
@@ -55,15 +56,29 @@
     '    if (impactIndex < uImpactCount) {',
     '      vec4 pointRadius = uImpactPointRadius[impactIndex];',
     '      vec4 velocityPhase = uImpactVelocityPhase[impactIndex];',
+    '      bool ribbonSource = velocityPhase.z >= 1.5;',
     '      vec2 offset = documentPoint - pointRadius.xy;',
     '      float radius = max(pointRadius.z, 2.0);',
+    '      float impactSpeed = length(velocityPhase.xy);',
+    '      vec2 tangent = impactSpeed > 0.001 ? velocityPhase.xy / impactSpeed : vec2(1.0, 0.0);',
+    '      vec2 normal = vec2(-tangent.y, tangent.x);',
+    '      vec2 orientedOffset = vec2(dot(offset, tangent), dot(offset, normal));',
+    '      float elongation = ribbonSource ? 2.65 : 1.0;',
+    '      float sourceDistance = length(orientedOffset / vec2(radius * elongation, radius));',
+    '      float sourceMask = 1.0 - smoothstep(0.72, 1.04, sourceDistance);',
     '      float gaussian = exp(-dot(offset, offset) / (radius * radius * 0.68));',
     '      vec2 bottomUpVelocity = vec2(velocityPhase.x, -velocityPhase.y);',
-    '      field.xy += bottomUpVelocity * gaussian * pointRadius.w;',
-    '      field.z = max(field.z, gaussian * pointRadius.w);',
+    '      if (ribbonSource) {',
+    '        float sourceWeight = sourceMask * (0.10 + 0.16 * clamp(pointRadius.w, 0.0, 1.0));',
+    '        field.xy = mix(field.xy, bottomUpVelocity, clamp(sourceWeight, 0.0, 0.28));',
+    '        field.z = max(field.z, sourceMask * 0.72);',
+    '      } else {',
+    '        field.xy += bottomUpVelocity * gaussian * pointRadius.w;',
+    '        field.z = max(field.z, gaussian * pointRadius.w);',
+    '      }',
     '    }',
     '  }',
-    '  gl_FragColor = vec4(clamp(field.xy, vec2(-760.0), vec2(760.0)), clamp(field.z, 0.0, 2.0), 1.0);',
+    '  gl_FragColor = vec4(clamp(field.xy, vec2(-140.0), vec2(140.0)), clamp(field.z, 0.0, 1.0), 1.0);',
     '}'
   ].join('\n');
 
@@ -91,7 +106,10 @@
     '}',
     'vec3 pigmentAbsorption(float phase) {',
     '  vec3 reflectance = max(displayPigment(phase), vec3(0.018));',
-    '  return clamp(-log(reflectance) * 0.72, vec3(0.04), vec3(3.4));',
+    '  vec3 pigmentRatio = (vec3(1.0) - reflectance) * (vec3(1.0) - reflectance) /',
+    '    max(2.0 * reflectance, vec3(0.001));',
+    '  vec3 scattering = vec3(0.46, 0.50, 0.56);',
+    '  return pigmentRatio * scattering;',
     '}',
     'void main() {',
     '  vec4 pigment = texture2D(uSource, vUv);',
@@ -100,13 +118,16 @@
     '    if (impactIndex < uImpactCount) {',
     '      vec4 pointRadius = uImpactPointRadius[impactIndex];',
     '      vec4 velocityPhase = uImpactVelocityPhase[impactIndex];',
+    '      bool ribbonSource = velocityPhase.z >= 1.5;',
+    '      float palettePhase = fract(velocityPhase.z);',
     '      vec2 offset = documentPoint - pointRadius.xy;',
     '      float radius = max(pointRadius.z, 2.0);',
     '      float impactSpeed = length(velocityPhase.xy);',
     '      vec2 tangent = impactSpeed > 0.001 ? velocityPhase.xy / impactSpeed : vec2(1.0, 0.0);',
     '      vec2 normal = vec2(-tangent.y, tangent.x);',
     '      vec2 orientedOffset = vec2(dot(offset, tangent), dot(offset, normal));',
-    '      float elongation = mix(1.18, 1.52, smoothstep(12.0, 58.0, impactSpeed));',
+    '      float elongation = ribbonSource ? 2.65 :',
+    '        mix(1.18, 1.52, smoothstep(12.0, 58.0, impactSpeed));',
     '      vec2 poolPoint = orientedOffset / vec2(radius * elongation, radius);',
     '      float phaseAngle = velocityPhase.w * 6.2831853;',
     '      float edgeNoise = 0.035 * sin(atan(poolPoint.y, poolPoint.x) * 5.0 + phaseAngle) +',
@@ -116,14 +137,29 @@
     '        pow(abs(poolPoint.y), superellipseExponent);',
     '      float poolEdge = 1.0 - smoothstep(0.80 + edgeNoise, 1.04 + edgeNoise, superellipse);',
     '      float flatCore = 1.0 - smoothstep(0.24, 1.0, superellipse);',
-    '      float deposit = poolEdge * max(pointRadius.w, 0.0) * (0.88 + 0.12 * flatCore);',
-    '      pigment.rgb += pigmentAbsorption(velocityPhase.z) * deposit;',
-    '      pigment.a += deposit;',
+    '      float lanePhase = palettePhase + poolPoint.y * 0.14 +',
+    '        sin(poolPoint.x * 2.4 + phaseAngle) * 0.012;',
+    '      vec3 sourceAbsorption = pigmentAbsorption(lanePhase);',
+    '      if (ribbonSource) {',
+    '        float targetThickness = poolEdge * max(pointRadius.w, 0.0) * (0.94 + 0.06 * flatCore);',
+    '        float nextThickness = max(pigment.a, targetThickness);',
+    '        vec3 existingAbsorption = pigment.a > 0.0001 ?',
+    '          pigment.rgb / pigment.a : sourceAbsorption;',
+    '        float addedFraction = max(targetThickness - pigment.a, 0.0) / max(nextThickness, 0.0001);',
+    '        float seamBlend = poolEdge * (1.0 - poolEdge) * 0.12;',
+    '        vec3 mixedAbsorption = mix(existingAbsorption, sourceAbsorption,',
+    '          clamp(addedFraction + seamBlend, 0.0, 1.0));',
+    '        pigment = vec4(mixedAbsorption * nextThickness, nextThickness);',
+    '      } else {',
+    '        float deposit = poolEdge * max(pointRadius.w, 0.0) * (0.88 + 0.12 * flatCore);',
+    '        pigment.rgb += sourceAbsorption * deposit;',
+    '        pigment.a += deposit;',
+    '      }',
     '    }',
     '  }',
     '  float thicknessScale = min(1.0, 2.0 / max(pigment.a, 0.0001));',
     '  pigment *= thicknessScale;',
-    '  gl_FragColor = vec4(min(pigment.rgb, vec3(6.8)), min(pigment.a, 2.0));',
+    '  gl_FragColor = vec4(min(pigment.rgb, vec3(48.0)), min(pigment.a, 2.0));',
     '}'
   ].join('\n');
 
@@ -265,7 +301,7 @@
     '    1.0',
     '  ));',
     '  vec3 absorption = pigment.rgb / max(thickness, 0.035);',
-    '  vec3 scattering = vec3(0.46, 0.50, 0.56) + 0.10 * clamp(absorption, 0.0, 1.0);',
+    '  vec3 scattering = vec3(0.46, 0.50, 0.56);',
     '  vec3 color = kubelkaMunkReflectance(absorption, scattering, thickness);',
     '  vec3 lightDirection = normalize(vec3(-0.42, 0.56, 0.71));',
     '  vec3 halfDirection = normalize(lightDirection + vec3(0.0, 0.0, 1.0));',
@@ -283,7 +319,7 @@
     '  float readingLane = smoothstep(uContentRect.x - uContentRect.z, uContentRect.x + uContentRect.z, screenX) *',
     '    (1.0 - smoothstep(uContentRect.y - uContentRect.z, uContentRect.y + uContentRect.z, screenX));',
     '  color = mix(color, vec3(0.97, 0.962, 0.945), readingLane * 0.055);',
-    '  float alpha = bodyAlpha * mix(0.93, uContentRect.w, readingLane);',
+    '  float alpha = bodyAlpha * mix(0.98, uContentRect.w, readingLane);',
     '  gl_FragColor = vec4(clamp(color, 0.0, 1.0), alpha);',
     '  #include <tonemapping_fragment>',
     '  #include <colorspace_fragment>',
@@ -320,6 +356,24 @@
       x: 2 * (1 - amount) * (control.x - from.x) + 2 * amount * (to.x - control.x),
       y: 2 * (1 - amount) * (control.y - from.y) + 2 * amount * (to.y - control.y)
     };
+  }
+
+  function quadraticLength(from, control, to) {
+    var length = 0;
+    var previous = copyPoint(from);
+    for (var sample = 1; sample <= 24; sample += 1) {
+      var point = quadraticPoint(from, control, to, sample / 24);
+      var deltaX = point.x - previous.x;
+      var deltaY = point.y - previous.y;
+      length += Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      previous = point;
+    }
+    return length;
+  }
+
+  function fractionalSeed(value) {
+    var sine = Math.sin(finite(value, 0) * 12.9898) * 43758.5453123;
+    return sine - Math.floor(sine);
   }
 
   PaintJourney.createLiquidField = function createLiquidField(options) {
@@ -606,7 +660,9 @@
       var nextContentLeft = finite(nextViewport.contentLeft, viewport.contentLeft);
       var nextContentRight = finite(nextViewport.contentRight, viewport.contentRight);
       var nextContentFeather = Math.max(1, finite(nextViewport.contentFeather, viewport.contentFeather));
-      var nextContentOpacity = clamp(finite(nextViewport.contentOpacity, viewport.contentOpacity), 0.35, 0.82);
+      var requestedContentOpacity = finite(nextViewport.contentOpacity, viewport.contentOpacity);
+      var nextContentOpacity = clamp(mobile ? Math.min(requestedContentOpacity, 0.20) : requestedContentOpacity,
+        mobile ? 0.12 : 0.35, 0.82);
       var documentChanged = viewport.documentWidth !== nextDocumentWidth ||
         viewport.documentHeight !== nextDocumentHeight;
       var changed = documentChanged || viewport.width !== nextWidth || viewport.height !== nextHeight ||
@@ -685,7 +741,11 @@
         velocity: velocity,
         radius: clamp(finite(impact.radius, 28), 2, 360),
         amount: clamp(finite(impact.amount, impact.pressure === undefined ? 0.5 : impact.pressure), 0.01, 2.5),
-        palettePhase: finite(impact.palettePhase, 0)
+        palettePhase: finite(impact.palettePhase, 0),
+        ribbon: Boolean(impact.ribbon),
+        seed: fractionalSeed(impact.seed === undefined
+          ? origin.x * 0.173 + origin.y * 0.117 + finite(impact.palettePhase, 0) * 31
+          : impact.seed)
       };
     }
 
@@ -703,26 +763,24 @@
     }
 
     function queueRevealImpact(impact) {
-      if (pendingImpacts.length >= 256) return false;
+      if (pendingImpacts.length >= REVEAL_IMPACT_LIMIT) return false;
       pendingImpacts.push(impact);
       return true;
     }
 
     function impactsForRevealInterval(gesture, startReveal, endReveal) {
       if (endReveal <= startReveal + 0.000001) return;
-      var intervalMidpoint = (startReveal + endReveal) * 0.5;
-      var tangent = quadraticTangent(gesture.from, gesture.control, gesture.to, intervalMidpoint);
-      var intervalLength = Math.sqrt(tangent.x * tangent.x + tangent.y * tangent.y) *
-        (endReveal - startReveal);
       var width = Math.max(1, finite(gesture.width, 40) * finite(gesture.spread, 1));
       var landing = gesture.kind < 0.5;
-      var laneCount = landing ? 3 : 2;
-      var spacing = Math.max(landing ? 10 : 6, width * 0.13);
-      var sampleCount = clamp(Math.ceil(intervalLength / spacing), 1, 64);
+      var spacing = Math.max(landing ? 24 : 8, width * (landing ? 0.34 : 0.30));
+      var totalSamples = clamp(Math.ceil(
+        quadraticLength(gesture.from, gesture.control, gesture.to) / spacing
+      ), 1, landing ? 64 : 72);
+      var firstOrdinal = clamp(Math.floor(startReveal * totalSamples), 0, totalSamples);
+      var finalOrdinal = clamp(Math.floor(endReveal * totalSamples), firstOrdinal, totalSamples);
       var queued = 0;
-      for (var sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
-        var progress = startReveal + (endReveal - startReveal) *
-          ((sampleIndex + 0.5) / sampleCount);
+      for (var sampleIndex = firstOrdinal; sampleIndex < finalOrdinal; sampleIndex += 1) {
+        var progress = (sampleIndex + 0.5) / totalSamples;
         var point = quadraticPoint(gesture.from, gesture.control, gesture.to, progress);
         var localTangent = quadraticTangent(gesture.from, gesture.control, gesture.to, progress);
         var tangentLength = Math.max(1, Math.sqrt(
@@ -732,37 +790,29 @@
         var tangentY = localTangent.y / tangentLength;
         var variationSeed = finite(gesture.seed, 0) * 1.913 + progress * 47.71 + sampleIndex * 2.17;
         var lateralJitter = Math.sin(variationSeed * 1.73) * width * 0.018 +
-          Math.sin(variationSeed * 0.61) * width * 0.009;
-        var tangentJitter = Math.sin(variationSeed * 0.91) * spacing * 0.10;
+          Math.sin(variationSeed * 0.61) * width * 0.008;
+        var tangentJitter = Math.sin(variationSeed * 0.91) * spacing * 0.06;
         point.x += tangentX * tangentJitter - tangentY * lateralJitter;
         point.y += tangentY * tangentJitter + tangentX * lateralJitter;
-        var landingGrowth = landing ? (0.42 + 0.58 * Math.min(1, progress * 2.8)) : 0.82;
-        var radiusVariation = 0.84 + 0.18 * (0.5 + 0.5 * Math.sin(variationSeed));
-        var radius = clamp(width * (landing ? 0.105 : 0.135) * landingGrowth * radiusVariation,
-          landing ? 5 : 4, landing ? 36 : 12);
-        var momentum = landing ? 38 : 26;
-        var amount = landing ? clamp(0.052 + width / 5000, 0.055, 0.105) : 0.064;
-        for (var laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
-          var lanePosition = laneIndex - (laneCount - 1) * 0.5;
-          var laneOffset = lanePosition * width * (landing ? 0.18 : 0.16);
-          var laneVariation = Math.sin(variationSeed + laneIndex * 2.37) * width * 0.006;
-          if (!queueRevealImpact({
-            origin: {
-              x: point.x - tangentY * (laneOffset + laneVariation),
-              y: point.y + tangentX * (laneOffset + laneVariation)
-            },
-            velocity: {
-              x: tangentX * momentum,
-              y: tangentY * momentum + (landing ? 4 : 2)
-            },
-            radius: radius * (0.94 + laneIndex * 0.035),
-            amount: amount * (laneIndex === 1 ? 1.0 : 0.91),
-            palettePhase: finite(gesture.palettePhase, 0) + progress * 0.08 +
-              lanePosition * 0.055 + Math.sin(variationSeed * 0.43) * 0.006
-          })) break;
-          queued += 1;
-        }
-        if (pendingImpacts.length >= 256) break;
+        var landingGrowth = landing ? (0.62 + 0.38 * Math.min(1, progress * 2.8)) : 0.9;
+        var radiusVariation = 0.97 + 0.03 * Math.sin(variationSeed);
+        var radius = clamp(width * 0.48 * landingGrowth * radiusVariation,
+          landing ? 18 : 6, landing ? 68 : 15);
+        var momentum = landing ? 32 : 22;
+        if (!queueRevealImpact({
+          origin: point,
+          velocity: {
+            x: tangentX * momentum,
+            y: tangentY * momentum + (landing ? 3 : 2)
+          },
+          radius: radius,
+          amount: landing ? 0.62 : 0.38,
+          palettePhase: finite(gesture.palettePhase, 0) + progress * 0.08,
+          ribbon: true,
+          seed: finite(gesture.seed, 0) * 131 + sampleIndex * 17
+        })) break;
+        queued += 1;
+        if (pendingImpacts.length >= REVEAL_IMPACT_LIMIT) break;
       }
       if (queued) wakeSolver();
       lastRevealIntervals.push({ id: gesture.id, from: startReveal, to: endReveal });
@@ -837,8 +887,9 @@
         impactPointRadius[offset + 3] = impact.amount;
         impactVelocityPhase[offset] = impact.velocity.x;
         impactVelocityPhase[offset + 1] = impact.velocity.y;
-        impactVelocityPhase[offset + 2] = impact.palettePhase;
-        impactVelocityPhase[offset + 3] = (startIndex + index) * 0.61803398875;
+        impactVelocityPhase[offset + 2] = (impact.ribbon ? 2 : 0) +
+          (impact.palettePhase - Math.floor(impact.palettePhase));
+        impactVelocityPhase[offset + 3] = fractionalSeed(impact.seed);
       }
       impactCountUniform.value = count;
       return count;
@@ -876,9 +927,11 @@
           x: velocityX,
           y: velocityY
         },
-        radius: 10 + emitterState.flow * 22,
-        amount: 0.12 + emitterState.flow * 0.38,
-        palettePhase: emitterState.palettePhase
+        radius: 4.5 + emitterState.flow * 4.5,
+        amount: 0.22 + emitterState.flow * 0.18,
+        palettePhase: emitterState.palettePhase,
+        ribbon: true,
+        seed: emitterState.origin.x * 0.173 + emitterState.origin.y * 0.117
       };
     }
 

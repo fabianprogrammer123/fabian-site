@@ -95,7 +95,7 @@ function gesture(id = 'landing:thoughts', reveal = 0.65) {
     from: { x: 980, y: 1600 },
     control: { x: 560, y: 1480 },
     to: { x: 100, y: 1540 },
-    width: 260,
+    width: 128,
     palettePhase: 0.62,
     seed: 4,
     reveal,
@@ -104,7 +104,7 @@ function gesture(id = 'landing:thoughts', reveal = 0.65) {
   };
 }
 
-function createFieldHarness(mobile = false, extensionAvailable = true) {
+function createFieldHarness(mobile = false, extensionAvailable = true, initialReveal = 0.65) {
   const { THREE, records } = createThreeHarness();
   const window = {};
   vm.runInNewContext(modelSource, { window, Math, Number, Object, Array, Map, Float32Array, Error });
@@ -139,7 +139,7 @@ function createFieldHarness(mobile = false, extensionAvailable = true) {
   };
   const scene = new THREE.Scene();
   const model = window.PaintJourney.createLiquidModel({ maxGestures: 12 });
-  model.upsertGesture(gesture());
+  model.upsertGesture(gesture('landing:thoughts', initialReveal));
   const field = window.PaintJourney.createLiquidField({ THREE, renderer, scene, model, mobile });
   return { THREE, records, renderer, scene, model, field };
 }
@@ -205,8 +205,8 @@ function testFullDocumentSizingAndStableScroll() {
     assert.ok(target.width <= 1024 && target.height <= 1024, 'velocity grid respects maxTextureSize');
   });
   [pigmentA, pigmentB].forEach((target) => {
-    assert.ok(target.width <= Math.floor(1280 * 0.30), 'desktop pigment grid uses at most 0.30 document scale');
-    assert.ok(target.height <= Math.floor(3600 * 0.30), 'desktop pigment grid uses at most 0.30 document scale');
+    assert.ok(target.width <= Math.floor(1280 * 0.38), 'desktop pigment grid uses at most 0.38 document scale');
+    assert.ok(target.height <= Math.floor(3600 * 0.38), 'desktop pigment grid uses at most 0.38 document scale');
     assert.ok(target.width * target.height <= 720000, 'desktop pigment grid respects 720k cap');
     assert.ok(target.width <= 1024 && target.height <= 1024, 'pigment grid respects maxTextureSize');
   });
@@ -248,20 +248,17 @@ function testSolverPassesCausalRevealAndReset() {
 
   const revealSources = records.renderCalls.filter((call) => call.materialName === 'paint-source-pigment');
   const revealCount = revealSources.reduce((total, call) => total + call.impactCount, 0);
-  assert.ok(revealCount >= 28, 'wide revealed gestures use dense overlapping deposits, not isolated beads');
+  assert.ok(revealCount >= 12, 'a revealed river uses enough overlapping union sources to stay continuous');
   assert.ok(revealCount <= 256, 'one reveal update must stay inside the bounded physical source budget');
   const revealRadii = revealSources.flatMap((call) => call.impactPointRadius.filter((value, index) => index % 4 === 2));
-  assert.ok(new Set(revealRadii.map((radius) => radius.toFixed(2))).size >= 6,
-    'deterministic radius variation breaks the repeated pill-stamp silhouette');
-  assert.ok(revealRadii.every((radius) => radius >= 5 && radius <= 36),
-    'marbled source lanes stay narrow enough to preserve white page space');
+  assert.ok(new Set(revealRadii.map((radius) => radius.toFixed(2))).size >= 4,
+    'subtle deterministic radius variation keeps the outer river edge organic');
+  assert.ok(revealRadii.filter((radius) => radius >= 18 && radius <= 68).length >= revealCount - 1,
+    'authored sources span one curated river cross-section rather than separate bead lanes');
   const revealPhases = revealSources.flatMap((call) =>
     call.impactVelocityPhase.filter((value, index) => index % 4 === 2));
-  assert.ok(new Set(revealPhases.slice(0, 3).map((phase) => phase.toFixed(3))).size === 3,
-    'each landing sample deposits three neighboring pigment lanes instead of one broad slab');
-  const firstLanePoints = revealSources[0].impactPointRadius.slice(0, 12);
-  assert.ok(firstLanePoints[0] !== firstLanePoints[4] || firstLanePoints[1] !== firstLanePoints[5],
-    'parallel pigment lanes receive distinct normal offsets');
+  assert.ok(revealPhases.every((phase) => phase >= 2 && phase < 3),
+    'authored sources carry a packed ribbon tag while preserving their palette phase');
   const revealSpeeds = revealSources.flatMap((call) => {
     const speeds = [];
     for (let index = 0; index < call.impactVelocityPhase.length; index += 4) {
@@ -324,8 +321,8 @@ function testImpactBatchFixedStepAndMobileBudget() {
   assert.ok(velocity.width <= Math.floor(390 * 0.14) && velocity.height <= Math.floor(5000 * 0.14),
     'mobile velocity uses the 0.14 document scale');
   assert.ok(velocity.width * velocity.height <= 160000, 'mobile velocity respects the 160k cap');
-  assert.ok(pigment.width <= Math.floor(390 * 0.38) && pigment.height <= Math.floor(5000 * 0.38),
-    'mobile pigment uses the 0.38 document scale');
+  assert.ok(pigment.width <= Math.floor(390 * 0.46) && pigment.height <= Math.floor(5000 * 0.46),
+    'mobile pigment uses the sharper 0.46 document scale');
   assert.ok(pigment.width * pigment.height <= 420000, 'mobile pigment respects the 420k cap');
   mobile.field.update(1, 1);
   assert.equal(mobile.records.renderCalls.filter((call) =>
@@ -333,6 +330,43 @@ function testImpactBatchFixedStepAndMobileBudget() {
   'mobile catch-up is capped at one fixed 1/20 step');
   assert.equal(mobile.records.renderCalls.filter((call) => call.materialName === 'paint-pressure-jacobi').length, 4,
     'mobile uses four pressure Jacobi iterations');
+}
+
+function revealPayloadForStepCount(stepCount) {
+  const harness = createFieldHarness(false, true, 0);
+  setDesktopViewport(harness.field);
+  harness.field.update(1 / 30, 0);
+  harness.records.renderCalls.length = 0;
+  for (let step = 1; step <= stepCount; step += 1) {
+    harness.model.setReveal('landing:thoughts', step / stepCount);
+    harness.field.update(1 / 30, step / 30);
+  }
+  const calls = harness.records.renderCalls.filter((call) =>
+    call.materialName === 'paint-source-pigment' && call.impactCount > 0);
+  return calls.flatMap((call) => {
+    const payload = [];
+    for (let index = 0; index < call.impactCount; index += 1) {
+      payload.push({
+        pointRadius: call.impactPointRadius.slice(index * 4, index * 4 + 4),
+        velocityPhaseSeed: call.impactVelocityPhase.slice(index * 4, index * 4 + 4)
+      });
+    }
+    return payload;
+  });
+}
+
+function testRevealSamplingIsRefreshRateIndependent() {
+  const once = revealPayloadForStepCount(1);
+  const thirty = revealPayloadForStepCount(30);
+  const oneTwenty = revealPayloadForStepCount(120);
+  assert.ok(once.length >= 20 && once.length <= 64,
+    'one complete landing uses a bounded deterministic source ordinal set');
+  assert.deepEqual(thirty, once,
+    'thirty reveal updates inject exactly the same geometry, mass, palette, and seeds as one update');
+  assert.deepEqual(oneTwenty, once,
+    'a 120Hz-style reveal cannot manufacture extra paint or repeated stamps');
+  assert.ok(new Set(once.map((impact) => impact.velocityPhaseSeed[3].toFixed(6))).size > once.length * 0.8,
+    'stable impact ordinals still provide varied organic edge seeds');
 }
 
 function testEmitterFlowAndProjectedMomentum() {
@@ -357,6 +391,12 @@ function testEmitterFlowAndProjectedMomentum() {
   assert.ok(firstSource, 'a flowing emitter uploads one local physical source');
   const firstMomentum = firstSource.impactVelocityPhase.slice(0, 2);
   const firstMass = firstSource.impactPointRadius[3];
+  assert.ok(firstSource.impactPointRadius[2] <= 10,
+    'the live bucket source stays a narrow stream instead of building a giant origin pool');
+  assert.ok(firstSource.impactVelocityPhase[2] >= 2 && firstSource.impactVelocityPhase[2] < 3,
+    'the live bucket source is tagged as a non-additive ribbon union');
+  assert.ok(firstSource.impactVelocityPhase[3] >= 0 && firstSource.impactVelocityPhase[3] < 1,
+    'the bucket source retains a stable organic-edge seed beside its ribbon tag');
 
   harness.records.renderCalls.length = 0;
   harness.field.setEmitter({
@@ -531,6 +571,16 @@ function testShaderAndSourceContracts() {
     'subtractive pigments mix gently at touching seams without becoming a muddy wash');
   assert.match(sourcePigmentShader, /thicknessScale[\s\S]*pigment\s*\*=\s*thicknessScale/,
     'the source caps accumulated mass proportionally so absorption-to-thickness color stays stable');
+  assert.match(sourcePigmentShader,
+    /ribbonSource[\s\S]*targetThickness\s*=\s*poolEdge[\s\S]*nextThickness\s*=\s*max\(pigment\.a,\s*targetThickness\)/,
+    'ribbon sources union target thickness instead of accumulating every overlapping sample');
+  assert.match(sourcePigmentShader, /existingAbsorption[\s\S]*mixedAbsorption[\s\S]*nextThickness/,
+    'ribbon union preserves and locally blends absorption without manufacturing extra mass');
+  assert.match(material('paint-source-velocity').fragmentShader,
+    /ribbonSource[\s\S]*mix\(field\.xy,\s*bottomUpVelocity/,
+    'ribbon momentum blends toward its authored velocity instead of accumulating at overlaps');
+  assert.match(sourcePigmentShader, /pigmentRatio\s*=\s*\(vec3\(1\.0\)\s*-\s*reflectance\)[\s\S]*2\.0\s*\*\s*reflectance/,
+    'display reflectance is converted to Kubelka-Munk K/S without a double-transform color cast');
   assert.match(fieldSource, /readingLane/i, 'the composite protects the reading lane');
   assert.match(fieldSource, /projectionMatrix\s*\*\s*modelViewMatrix/,
     'the visible vertex shader uses the actor camera projection');
@@ -548,6 +598,7 @@ testAllocationAndCompositeContracts();
 testFullDocumentSizingAndStableScroll();
 testSolverPassesCausalRevealAndReset();
 testImpactBatchFixedStepAndMobileBudget();
+testRevealSamplingIsRefreshRateIndependent();
 testEmitterFlowAndProjectedMomentum();
 testAmbientFreezeFeatureGateAndDisposal();
 testQuietSettlementAndWakeup();

@@ -126,11 +126,11 @@
   }
 
   function landingWidth(canvasWidth, mobile) {
-    return clamp(canvasWidth * 0.09, mobile ? 70 : 86, mobile ? 96 : 132);
+    return clamp(canvasWidth * (mobile ? 0.13 : 0.082), mobile ? 46 : 80, mobile ? 60 : 118);
   }
 
   function connectorWidth(mobile) {
-    return mobile ? 22 : 28;
+    return mobile ? 16 : 28;
   }
 
   function ease(value) {
@@ -672,8 +672,11 @@
   }
 
   function landingGeometry(documentPoint, canvasWidth, mobile, sequence, levelIndex) {
-    var sweepDistance = canvasWidth * (mobile ? 0.82 : 0.86);
-    var bend = (levelIndex % 2 === 0 ? -1 : 1) * (mobile ? 34 : 58);
+    var desktopSweepRatios = [0.72, 0.52, 0.64, 0.44, 0.60, 0.75];
+    var mobileSweepRatios = [0.66, 0.50, 0.60, 0.44, 0.56, 0.68];
+    var sweepRatios = mobile ? mobileSweepRatios : desktopSweepRatios;
+    var sweepDistance = canvasWidth * sweepRatios[sequence % sweepRatios.length];
+    var bend = (levelIndex % 2 === 0 ? -1 : 1) * (mobile ? 46 : 86);
     var from = { x: documentPoint.x, y: documentPoint.y };
     var to = {
       x: clamp(from.x - sweepDistance, 28, canvasWidth - 28),
@@ -683,7 +686,7 @@
       from: from,
       control: {
         x: mix(from.x, to.x, 0.46),
-        y: clamp(documentPoint.y - bend * 0.55 + ((sequence % 3) - 1) * 16,
+        y: clamp(documentPoint.y - bend * 0.72 + ((sequence % 3) - 1) * (mobile ? 18 : 30),
           28, documentHeight() - 28)
       },
       to: to,
