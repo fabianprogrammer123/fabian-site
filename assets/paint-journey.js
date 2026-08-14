@@ -125,6 +125,14 @@
     return Math.max(minimum, Math.min(maximum, value));
   }
 
+  function landingWidth(canvasWidth, mobile) {
+    return clamp(canvasWidth * 0.09, mobile ? 70 : 86, mobile ? 96 : 132);
+  }
+
+  function connectorWidth(mobile) {
+    return mobile ? 22 : 28;
+  }
+
   function ease(value) {
     value = clamp(value, 0, 1);
     return value * value * (3 - 2 * value);
@@ -679,7 +687,7 @@
           28, documentHeight() - 28)
       },
       to: to,
-      width: clamp(canvasWidth * 0.28, mobile ? 124 : 190, mobile ? 230 : 390)
+      width: landingWidth(canvasWidth, mobile)
     };
   }
 
@@ -743,7 +751,7 @@
           y: mix(connectorFrom.y, connectorTo.y, 0.5)
         },
         to: connectorTo,
-        width: mobile ? 48 : 68
+        width: connectorWidth(mobile)
       });
     }
   }
@@ -779,7 +787,7 @@
       from: { x: landingOrigin.x, y: landingOrigin.y },
       control: { x: landingControl.x, y: landingControl.y },
       to: { x: landingDestination.x, y: landingDestination.y },
-      width: clamp(canvasWidth * 0.28, mobile ? 124 : 190, mobile ? 230 : 390),
+      width: landingWidth(canvasWidth, mobile),
       palettePhase: landingPalettePhase,
       seed: 19 + landingSequence * 37,
       reveal: 0,
@@ -813,8 +821,7 @@
         from: { x: landingOrigin.x, y: landingOrigin.y },
         control: { x: landingControl.x, y: landingControl.y },
         to: { x: landingDestination.x, y: landingDestination.y },
-        width: clamp(documentWidth() * 0.28, isMobileViewport() ? 124 : 190,
-          isMobileViewport() ? 230 : 390)
+        width: landingWidth(documentWidth(), isMobileViewport())
       });
       landingNeedsRebase = false;
     }
@@ -861,7 +868,7 @@
         from: { x: connectorOrigin.x, y: connectorOrigin.y },
         control: { x: connectorControl.x, y: connectorControl.y },
         to: { x: connectorDestination.x, y: connectorDestination.y },
-        width: isMobileViewport() ? 48 : 68,
+        width: connectorWidth(isMobileViewport()),
         palettePhase: landingPalettePhase,
         seed: 71 + targetIndex * 29,
         reveal: clamp(progress, 0, 1),
@@ -878,7 +885,7 @@
       from: { x: connectorOrigin.x, y: connectorOrigin.y },
       control: { x: connectorControl.x, y: connectorControl.y },
       to: { x: connectorDestination.x, y: connectorDestination.y },
-      width: isMobileViewport() ? 48 : 68
+      width: connectorWidth(isMobileViewport())
     });
     liquidModel.setReveal(connectorId, clamp(progress, 0, 1));
     setLiquidEmitterDry(documentPoint);

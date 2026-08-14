@@ -102,11 +102,18 @@
     '      vec4 velocityPhase = uImpactVelocityPhase[impactIndex];',
     '      vec2 offset = documentPoint - pointRadius.xy;',
     '      float radius = max(pointRadius.z, 2.0);',
-    '      vec2 poolPoint = offset / radius;',
+    '      float impactSpeed = length(velocityPhase.xy);',
+    '      vec2 tangent = impactSpeed > 0.001 ? velocityPhase.xy / impactSpeed : vec2(1.0, 0.0);',
+    '      vec2 normal = vec2(-tangent.y, tangent.x);',
+    '      vec2 orientedOffset = vec2(dot(offset, tangent), dot(offset, normal));',
+    '      float elongation = mix(1.18, 1.52, smoothstep(12.0, 58.0, impactSpeed));',
+    '      vec2 poolPoint = orientedOffset / vec2(radius * elongation, radius);',
     '      float phaseAngle = velocityPhase.w * 6.2831853;',
     '      float edgeNoise = 0.035 * sin(atan(poolPoint.y, poolPoint.x) * 5.0 + phaseAngle) +',
     '        0.022 * sin(atan(poolPoint.y, poolPoint.x) * 9.0 - phaseAngle * 1.7);',
-    '      float superellipse = pow(abs(poolPoint.x), 3.25) + pow(abs(poolPoint.y), 3.25);',
+    '      float superellipseExponent = 2.15;',
+    '      float superellipse = pow(abs(poolPoint.x), superellipseExponent) +',
+    '        pow(abs(poolPoint.y), superellipseExponent);',
     '      float poolEdge = 1.0 - smoothstep(0.80 + edgeNoise, 1.04 + edgeNoise, superellipse);',
     '      float flatCore = 1.0 - smoothstep(0.24, 1.0, superellipse);',
     '      float deposit = poolEdge * max(pointRadius.w, 0.0) * (0.88 + 0.12 * flatCore);',
@@ -114,7 +121,9 @@
     '      pigment.a += deposit;',
     '    }',
     '  }',
-    '  gl_FragColor = vec4(min(pigment.rgb, vec3(12.0)), min(pigment.a, 6.0));',
+    '  float thicknessScale = min(1.0, 2.0 / max(pigment.a, 0.0001));',
+    '  pigment *= thicknessScale;',
+    '  gl_FragColor = vec4(min(pigment.rgb, vec3(6.8)), min(pigment.a, 2.0));',
     '}'
   ].join('\n');
 
@@ -138,12 +147,12 @@
     '  vec2 thicknessGradient = vec2(rightThickness - leftThickness, highThickness - lowThickness);',
     '  float yieldStress = mix(42.0, 12.0, smoothstep(0.0, 1.3, thickness));',
     '  float yielded = smoothstep(yieldStress * 0.72, yieldStress * 1.35, length(velocity));',
-    '  float viscoplasticDrag = mix(0.73, 0.985, yielded);',
+    '  float viscoplasticDrag = mix(0.78, 0.925, yielded);',
     '  velocity *= pow(viscoplasticDrag, uDelta * 30.0);',
-    '  velocity -= thicknessGradient * (19.0 + 24.0 * min(thickness, 1.5));',
+    '  velocity -= thicknessGradient * 45.0 * uDelta;',
     '  float dripWeight = smoothstep(0.025, 0.82, thickness) * (0.30 + 0.70 * yielded);',
     '  velocity.y -= uGravity * uDelta * dripWeight;',
-    '  gl_FragColor = vec4(clamp(velocity, vec2(-760.0), vec2(760.0)), yielded, 1.0);',
+    '  gl_FragColor = vec4(clamp(velocity, vec2(-140.0), vec2(140.0)), yielded, 1.0);',
     '}'
   ].join('\n');
 
@@ -201,11 +210,15 @@
     'uniform float uDelta;',
     'uniform float uGravity;',
     'void main() {',
-    '  vec2 velocity = texture2D(uVelocity, vUv).xy;',
+    '  vec4 flowState = texture2D(uVelocity, vUv);',
+    '  vec2 velocity = flowState.xy;',
     '  float thickness = texture2D(uPigment, vUv).a;',
-    '  float dripMobility = smoothstep(0.018, 0.95, thickness) * (1.0 - 0.28 * smoothstep(1.4, 3.4, thickness));',
+    '  float yielded = clamp(flowState.z, 0.0, 1.0);',
+    '  float thinFilm = smoothstep(0.035, 0.22, thickness) *',
+    '    (1.0 - smoothstep(0.82, 1.65, thickness));',
+    '  float dripMobility = thinFilm * mix(0.18, 1.0, yielded);',
     '  velocity.y -= uGravity * uDelta * dripMobility;',
-    '  velocity.x += sin(vUv.y * 91.0 + thickness * 5.7) * 1.4 * dripMobility;',
+    '  velocity.x += sin(vUv.y * 91.0 + thickness * 5.7) * 0.24 * dripMobility;',
     '  vec2 backtrace = clamp(vUv - velocity * uDelta / uDocumentSize, vec2(0.0), vec2(1.0));',
     '  vec4 center = texture2D(uPigment, backtrace);',
     '  vec4 left = texture2D(uPigment, backtrace - vec2(uPigmentTexel.x, 0.0));',
@@ -213,8 +226,8 @@
     '  vec4 low = texture2D(uPigment, backtrace - vec2(0.0, uPigmentTexel.y));',
     '  vec4 high = texture2D(uPigment, backtrace + vec2(0.0, uPigmentTexel.y));',
     '  vec4 mixedPigment = (left + right + low + high) * 0.25;',
-    '  float pigmentDiffusion = (0.0015 + 0.0035 * dripMobility) * uDelta * 30.0;',
-    '  vec4 pigment = mix(center, mixedPigment, clamp(pigmentDiffusion, 0.0, 0.006));',
+    '  float pigmentDiffusion = (0.00018 + 0.00042 * dripMobility) * uDelta * 30.0;',
+    '  vec4 pigment = mix(center, mixedPigment, clamp(pigmentDiffusion, 0.0, 0.00065));',
     '  float settling = mix(0.99982, 0.99996, smoothstep(0.2, 2.0, pigment.a));',
     '  pigment *= pow(settling, uDelta * 30.0);',
     '  gl_FragColor = max(pigment, vec4(0.0));',
@@ -262,7 +275,7 @@
     '  float wetSpecular = pow(max(dot(thicknessNormal, halfDirection), 0.0), specularPower);',
     '  float thicknessGradient = length(vec2(rightThickness - leftThickness, highThickness - lowThickness));',
     '  float meniscus = smoothstep(0.035, 0.22, thicknessGradient) * smoothstep(0.025, 0.22, thickness);',
-    '  float bodyAlpha = smoothstep(0.028, 0.12, thickness);',
+    '  float bodyAlpha = smoothstep(0.035, 0.20, thickness);',
     '  color *= diffuseLight * mix(0.88, 1.04, smoothstep(0.1, 1.8, thickness));',
     '  color = mix(color, vec3(0.018, 0.022, 0.035), meniscus * 0.16);',
     '  color += vec3(1.0, 0.965, 0.91) * (wetSpecular * 0.16 + meniscus * wetSpecular * 0.24);',
@@ -423,7 +436,7 @@
         uDocumentSize: { value: documentSizeUniform },
         uPigmentTexel: { value: pigmentTexelUniform },
         uDelta: { value: fixedStep },
-        uGravity: { value: 126 }
+        uGravity: { value: 26 }
       }
     );
     var divergenceMaterial = simulationMaterial('paint-divergence', DIVERGENCE_FRAGMENT_SHADER, {
@@ -446,7 +459,7 @@
       uDocumentSize: { value: documentSizeUniform },
       uPigmentTexel: { value: pigmentTexelUniform },
       uDelta: { value: fixedStep },
-      uGravity: { value: 72 }
+      uGravity: { value: 22 }
     });
     var simulationMaterials = [
       clearMaterial,
@@ -689,6 +702,12 @@
       return accepted;
     }
 
+    function queueRevealImpact(impact) {
+      if (pendingImpacts.length >= 256) return false;
+      pendingImpacts.push(impact);
+      return true;
+    }
+
     function impactsForRevealInterval(gesture, startReveal, endReveal) {
       if (endReveal <= startReveal + 0.000001) return;
       var intervalMidpoint = (startReveal + endReveal) * 0.5;
@@ -696,8 +715,11 @@
       var intervalLength = Math.sqrt(tangent.x * tangent.x + tangent.y * tangent.y) *
         (endReveal - startReveal);
       var width = Math.max(1, finite(gesture.width, 40) * finite(gesture.spread, 1));
-      var spacing = Math.max(7, width * 0.075);
+      var landing = gesture.kind < 0.5;
+      var laneCount = landing ? 3 : 2;
+      var spacing = Math.max(landing ? 10 : 6, width * 0.13);
       var sampleCount = clamp(Math.ceil(intervalLength / spacing), 1, 64);
+      var queued = 0;
       for (var sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
         var progress = startReveal + (endReveal - startReveal) *
           ((sampleIndex + 0.5) / sampleCount);
@@ -709,25 +731,40 @@
         var tangentX = localTangent.x / tangentLength;
         var tangentY = localTangent.y / tangentLength;
         var variationSeed = finite(gesture.seed, 0) * 1.913 + progress * 47.71 + sampleIndex * 2.17;
-        var lateralJitter = Math.sin(variationSeed * 1.73) * width * 0.052 +
-          Math.sin(variationSeed * 0.61) * width * 0.025;
-        point.x += -tangentY * lateralJitter;
-        point.y += tangentX * lateralJitter;
-        var landingGrowth = gesture.kind < 0.5 ? (0.34 + 0.66 * Math.min(1, progress * 2.8)) : 0.78;
+        var lateralJitter = Math.sin(variationSeed * 1.73) * width * 0.018 +
+          Math.sin(variationSeed * 0.61) * width * 0.009;
+        var tangentJitter = Math.sin(variationSeed * 0.91) * spacing * 0.10;
+        point.x += tangentX * tangentJitter - tangentY * lateralJitter;
+        point.y += tangentY * tangentJitter + tangentX * lateralJitter;
+        var landingGrowth = landing ? (0.42 + 0.58 * Math.min(1, progress * 2.8)) : 0.82;
         var radiusVariation = 0.84 + 0.18 * (0.5 + 0.5 * Math.sin(variationSeed));
-        pendingImpacts.push({
-          origin: point,
-          velocity: {
-            x: tangentX * 67,
-            y: tangentY * 67 + 18
-          },
-          radius: clamp(width * 0.17 * landingGrowth * radiusVariation, 9, 150),
-          amount: clamp(0.135 + width / 1250, 0.16, 0.46),
-          palettePhase: finite(gesture.palettePhase, 0) + progress * 0.34 +
-            Math.sin(variationSeed * 0.43) * 0.014
-        });
+        var radius = clamp(width * (landing ? 0.105 : 0.135) * landingGrowth * radiusVariation,
+          landing ? 5 : 4, landing ? 36 : 12);
+        var momentum = landing ? 38 : 26;
+        var amount = landing ? clamp(0.052 + width / 5000, 0.055, 0.105) : 0.064;
+        for (var laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+          var lanePosition = laneIndex - (laneCount - 1) * 0.5;
+          var laneOffset = lanePosition * width * (landing ? 0.18 : 0.16);
+          var laneVariation = Math.sin(variationSeed + laneIndex * 2.37) * width * 0.006;
+          if (!queueRevealImpact({
+            origin: {
+              x: point.x - tangentY * (laneOffset + laneVariation),
+              y: point.y + tangentX * (laneOffset + laneVariation)
+            },
+            velocity: {
+              x: tangentX * momentum,
+              y: tangentY * momentum + (landing ? 4 : 2)
+            },
+            radius: radius * (0.94 + laneIndex * 0.035),
+            amount: amount * (laneIndex === 1 ? 1.0 : 0.91),
+            palettePhase: finite(gesture.palettePhase, 0) + progress * 0.08 +
+              lanePosition * 0.055 + Math.sin(variationSeed * 0.43) * 0.006
+          })) break;
+          queued += 1;
+        }
+        if (pendingImpacts.length >= 256) break;
       }
-      wakeSolver();
+      if (queued) wakeSolver();
       lastRevealIntervals.push({ id: gesture.id, from: startReveal, to: endReveal });
     }
 

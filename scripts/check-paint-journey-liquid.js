@@ -249,9 +249,19 @@ function testSolverPassesCausalRevealAndReset() {
   const revealSources = records.renderCalls.filter((call) => call.materialName === 'paint-source-pigment');
   const revealCount = revealSources.reduce((total, call) => total + call.impactCount, 0);
   assert.ok(revealCount >= 28, 'wide revealed gestures use dense overlapping deposits, not isolated beads');
+  assert.ok(revealCount <= 256, 'one reveal update must stay inside the bounded physical source budget');
   const revealRadii = revealSources.flatMap((call) => call.impactPointRadius.filter((value, index) => index % 4 === 2));
   assert.ok(new Set(revealRadii.map((radius) => radius.toFixed(2))).size >= 6,
     'deterministic radius variation breaks the repeated pill-stamp silhouette');
+  assert.ok(revealRadii.every((radius) => radius >= 5 && radius <= 36),
+    'marbled source lanes stay narrow enough to preserve white page space');
+  const revealPhases = revealSources.flatMap((call) =>
+    call.impactVelocityPhase.filter((value, index) => index % 4 === 2));
+  assert.ok(new Set(revealPhases.slice(0, 3).map((phase) => phase.toFixed(3))).size === 3,
+    'each landing sample deposits three neighboring pigment lanes instead of one broad slab');
+  const firstLanePoints = revealSources[0].impactPointRadius.slice(0, 12);
+  assert.ok(firstLanePoints[0] !== firstLanePoints[4] || firstLanePoints[1] !== firstLanePoints[5],
+    'parallel pigment lanes receive distinct normal offsets');
   const revealSpeeds = revealSources.flatMap((call) => {
     const speeds = [];
     for (let index = 0; index < call.impactVelocityPhase.length; index += 4) {
@@ -259,7 +269,7 @@ function testSolverPassesCausalRevealAndReset() {
     }
     return speeds;
   });
-  assert.ok(revealSpeeds.filter((speed) => speed <= 105).length >= revealCount - 1,
+  assert.ok(revealSpeeds.filter((speed) => speed <= 58).length >= revealCount - 1,
     'authored reveal momentum remains restrained enough for viscous paint to pool');
 
   field.setEmitter({ active: false, origin: { x: 970, y: 1580 }, pressure: 0, palettePhase: 0.62 });
@@ -467,6 +477,8 @@ function testShaderAndSourceContracts() {
   const sourcePigmentShader = material('paint-source-pigment').fragmentShader;
   const advectPigmentShader = material('paint-advect-pigment').fragmentShader;
   const compositeShader = harness.scene.children[0].material.fragmentShader;
+  const velocityMaterial = material('paint-advect-viscoplastic-velocity');
+  const pigmentMaterial = material('paint-advect-pigment');
 
   assert.doesNotMatch(fieldSource, /CONTOUR_BANDS|quadraticDistanceSample|smoothMinPolynomial|MeshBasicMaterial/,
     'the fake contour/SDF ribbon renderer must be absent');
@@ -480,12 +492,18 @@ function testShaderAndSourceContracts() {
     'pigment gravity is integrated in seconds and cannot accelerate once per frame');
   assert.doesNotMatch(advectPigmentShader, /uGravity\s*\*\s*\(\s*0\.16/,
     'pigment advection has no frame-rate-dependent constant gravity kick');
-  assert.match(advectPigmentShader, /pigmentDiffusion\s*=\s*\(0\.0015\s*\+\s*0\.0035\s*\*\s*dripMobility\)/,
+  assert.match(advectPigmentShader, /pigmentDiffusion\s*=\s*\(0\.00018\s*\+\s*0\.00042\s*\*\s*dripMobility\)/,
     'pigment diffusion remains low enough to preserve clean wet color seams');
   assert.doesNotMatch(sourcePigmentShader, /float\s+core\s*=\s*exp\s*\(/,
     'pigment mass is not deposited as an airbrush Gaussian');
   assert.match(sourcePigmentShader, /superellipse|edgeNoise|flatCore/,
     'pigment sources form flat-bodied irregular wet pools');
+  assert.match(sourcePigmentShader, /orientedOffset[\s\S]*dot\(offset,\s*tangent\)[\s\S]*dot\(offset,\s*normal\)/,
+    'source pools orient their organic long axis to the physical impact tangent');
+  assert.match(sourcePigmentShader, /float\s+superellipseExponent\s*=\s*2\.1[0-9]?/,
+    'source pools use a rounded superellipse instead of an axis-aligned rectangular stamp');
+  assert.match(sourcePigmentShader, /elongation/,
+    'impact momentum modestly elongates each liquid lobe along its travel direction');
   assert.doesNotMatch(sourcePigmentShader, /smoothstep\(1\.04[^,]*,\s*0\.80|smoothstep\(1\.0,\s*0\.24/,
     'organic pool masks must never rely on undefined reversed-edge smoothstep behavior');
   assert.match(fieldSource, /kubelkaMunk/i, 'the composite uses Kubelka-Munk pigment reflectance');
@@ -496,6 +514,23 @@ function testShaderAndSourceContracts() {
   assert.match(fieldSource, /meniscus/i, 'the wet material resolves a capillary meniscus');
   assert.match(compositeShader, /wetSpecular\s*\*\s*0\.16/,
     'wet body highlights stay restrained instead of becoming repeated white pills');
+  assert.ok(velocityMaterial.uniforms.uGravity.value >= 20 && velocityMaterial.uniforms.uGravity.value <= 30,
+    'velocity gravity stays inside the controlled sticky-paint range');
+  assert.ok(pigmentMaterial.uniforms.uGravity.value >= 18 && pigmentMaterial.uniforms.uGravity.value <= 28,
+    'pigment gravity only draws short edge drips instead of a page-height cascade');
+  assert.match(velocityMaterial.fragmentShader, /mix\(0\.7[5-9],\s*0\.9[0-4][0-9],\s*yielded\)/,
+    'even yielded paint loses momentum quickly like a heavy viscoplastic medium');
+  assert.match(velocityMaterial.fragmentShader,
+    /velocity\s*-?=\s*thicknessGradient\s*\*\s*45\.0\s*\*\s*uDelta/,
+    'surface-tension acceleration is time-step scaled instead of exploding once per frame');
+  assert.match(velocityMaterial.fragmentShader, /clamp\(velocity,\s*vec2\(-140\.0\),\s*vec2\(140\.0\)\)/,
+    'the heavy paint solver rejects runaway momentum before it can expand into a page wall');
+  assert.match(advectPigmentShader, /texture2D\(uVelocity,\s*vUv\)[\s\S]*\.z|flowState\.z/,
+    'gravity mobility is coupled to the solver yield state');
+  assert.match(advectPigmentShader, /clamp\(pigmentDiffusion,\s*0\.0,\s*0\.00065\)/,
+    'subtractive pigments mix gently at touching seams without becoming a muddy wash');
+  assert.match(sourcePigmentShader, /thicknessScale[\s\S]*pigment\s*\*=\s*thicknessScale/,
+    'the source caps accumulated mass proportionally so absorption-to-thickness color stays stable');
   assert.match(fieldSource, /readingLane/i, 'the composite protects the reading lane');
   assert.match(fieldSource, /projectionMatrix\s*\*\s*modelViewMatrix/,
     'the visible vertex shader uses the actor camera projection');
