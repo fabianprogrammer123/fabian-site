@@ -12,30 +12,17 @@ const modelSource = fs.readFileSync(path.join(root, 'assets/paint-journey-liquid
 const fieldSource = fs.readFileSync(path.join(root, 'assets/paint-journey-liquid.js'), 'utf8');
 
 function createThreeHarness() {
-  const records = {
-    targets: [],
-    geometries: [],
-    materials: [],
-    meshes: [],
-    renderCalls: []
-  };
+  const records = { targets: [], geometries: [], materials: [], meshes: [], renderCalls: [] };
 
   class Scene {
     constructor() { this.children = []; }
-    add(object) {
-      object.parent = this;
-      this.children.push(object);
-    }
+    add(object) { object.parent = this; this.children.push(object); }
     remove(object) {
       object.parent = null;
-      this.children = this.children.filter((child) => child !== object);
+      this.children = this.children.filter((candidate) => candidate !== object);
     }
   }
-
-  class OrthographicCamera {
-    constructor(...values) { this.values = values; }
-  }
-
+  class OrthographicCamera { constructor(...values) { this.values = values; } }
   class PlaneGeometry {
     constructor(width, height) {
       this.width = width;
@@ -45,25 +32,18 @@ function createThreeHarness() {
     }
     dispose() { this.disposeCount += 1; }
   }
-
   class ShaderMaterial {
     constructor(options) {
       Object.assign(this, options);
+      this.name = '';
       this.disposeCount = 0;
       records.materials.push(this);
     }
     dispose() { this.disposeCount += 1; }
   }
-
   class MeshBasicMaterial {
-    constructor(options) {
-      Object.assign(this, options);
-      this.disposeCount = 0;
-      records.materials.push(this);
-    }
-    dispose() { this.disposeCount += 1; }
+    constructor(options) { Object.assign(this, options); records.materials.push(this); }
   }
-
   class Mesh {
     constructor(geometry, material) {
       this.geometry = geometry;
@@ -71,23 +51,21 @@ function createThreeHarness() {
       this.position = { x: 0, y: 0, z: 0, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
       this.scale = { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
       this.parent = null;
+      this.renderOrder = 0;
       records.meshes.push(this);
     }
   }
-
   class WebGLRenderTarget {
     constructor(width, height, options) {
       this.width = width;
       this.height = height;
       this.options = options;
-      this.texture = {};
+      this.texture = { colorSpace: null, generateMipmaps: true, name: '' };
+      this.setSizeCount = 0;
       this.disposeCount = 0;
       records.targets.push(this);
     }
-    setSize(width, height) {
-      this.width = width;
-      this.height = height;
-    }
+    setSize(width, height) { this.width = width; this.height = height; this.setSizeCount += 1; }
     dispose() { this.disposeCount += 1; }
   }
 
@@ -100,16 +78,18 @@ function createThreeHarness() {
     Mesh,
     WebGLRenderTarget,
     LinearFilter: 'linear',
+    ClampToEdgeWrapping: 'clamp',
     RGBAFormat: 'rgba',
-    UnsignedByteType: 'ubyte',
+    RedFormat: 'red',
+    HalfFloatType: 'half-float',
+    NoColorSpace: 'no-color-space',
     NormalBlending: 'normal',
     NoBlending: 'none'
   };
-
   return { THREE, records };
 }
 
-function makeGesture(id = 'landing:thoughts') {
+function gesture(id = 'landing:thoughts', reveal = 0.65) {
   return {
     id,
     from: { x: 980, y: 1600 },
@@ -118,301 +98,264 @@ function makeGesture(id = 'landing:thoughts') {
     width: 260,
     palettePhase: 0.62,
     seed: 4,
-    reveal: 0.65,
+    reveal,
     spread: 1,
     kind: 0
   };
 }
 
-function createFieldHarness(mobile = false) {
+function createFieldHarness(mobile = false, extensionAvailable = true) {
   const { THREE, records } = createThreeHarness();
   const window = {};
-  const context = { window, Math, Number, Object, Array, Map, Float32Array, Error };
-  vm.runInNewContext(modelSource, context);
-  vm.runInNewContext(fieldSource, context);
+  vm.runInNewContext(modelSource, { window, Math, Number, Object, Array, Map, Float32Array, Error });
+  vm.runInNewContext(fieldSource, { window, Math, Number, Object, Array, Map, Float32Array, Error });
 
   const renderer = {
     currentTarget: null,
-    getPixelRatio() { return 3; },
+    capabilities: { maxTextureSize: 1024 },
+    extensions: { has(name) { return name === 'EXT_color_buffer_float' && extensionAvailable; } },
     getRenderTarget() { return this.currentTarget; },
     setRenderTarget(target) { this.currentTarget = target; },
-    render(scene, camera) { records.renderCalls.push({ scene, camera, target: this.currentTarget }); }
+    render(scene, camera) {
+      records.renderCalls.push({
+        scene,
+        camera,
+        target: this.currentTarget,
+        material: scene.children[0] && scene.children[0].material,
+        materialName: scene.children[0] && scene.children[0].material.name
+      });
+    }
   };
   const scene = new THREE.Scene();
   const model = window.PaintJourney.createLiquidModel({ maxGestures: 12 });
-  model.upsertGesture(makeGesture());
+  model.upsertGesture(gesture());
   const field = window.PaintJourney.createLiquidField({ THREE, renderer, scene, model, mobile });
-
   return { THREE, records, renderer, scene, model, field };
 }
 
-function assertApproximateArray(actual, expected, message) {
-  assert.equal(actual.length, expected.length, `${message}: array lengths must match`);
-  expected.forEach((value, index) => {
-    assert.ok(Math.abs(actual[index] - value) < 0.00001,
-      `${message}: index ${index} expected ${value}, received ${actual[index]}`);
+function setDesktopViewport(field, overrides = {}) {
+  field.setViewport({
+    width: 1280,
+    height: 720,
+    scrollX: 0,
+    scrollY: 1000,
+    documentWidth: 1280,
+    documentHeight: 3600,
+    contentLeft: 290,
+    contentRight: 990,
+    contentFeather: 92,
+    ...overrides
   });
 }
 
-function testOneBoundedSurfaceAndFixedUniformPacket() {
-  const harness = createFieldHarness(false);
-  const { records, scene, field } = harness;
-
-  assert.equal(records.targets.length, 1, 'one field must allocate one low-resolution render target');
-  assert.equal(scene.children.length, 1, 'the actor scene must receive exactly one liquid composite plane');
-  assert.equal(scene.children[0].position.z, 4, 'the liquid composite must occupy the authored depth-four plane');
-  assert.ok(scene.children[0].renderOrder < 5, 'the liquid composite must remain behind the crisp actor layers');
-  assert.equal(records.meshes.length, 2,
-    'all gestures must share one private field mesh and one composite mesh');
-
-  const shader = records.materials.find((material) => material.fragmentShader);
-  assert.ok(shader, 'the private liquid scene must use one shader material');
-  assert.equal(shader.uniforms.uGestureStartControl.value.length, 48,
-    'twelve gestures must use one fixed vec4 start/control array');
-  assert.equal(shader.uniforms.uGestureEndShape.value.length, 48,
-    'twelve gestures must use one fixed vec4 endpoint/shape array');
-  assert.equal(shader.uniforms.uGestureStyle.value.length, 48,
-    'twelve gestures must use one fixed vec4 palette/style array');
-  assert.equal(shader.uniforms.uContentRect.value.length, 4,
-    'the liquid field must receive one bounded reading-lane uniform');
-
-  field.setViewport({
-    width: 1280, height: 720, scrollX: 0, scrollY: 1000,
-    documentWidth: 1280, documentHeight: 1800,
-    contentLeft: 290, contentRight: 990, contentFeather: 92
+function testAllocationAndCompositeContracts() {
+  const harness = createFieldHarness();
+  const { THREE, records, scene, field } = harness;
+  assert.equal(records.targets.length, 7,
+    'one field must allocate seven full-document half-float solver targets');
+  assert.equal(records.targets.filter((target) => target.options.format === THREE.RGBAFormat).length, 4,
+    'velocity and pigment ping-pong targets must use RGBAFormat');
+  assert.equal(records.targets.filter((target) => target.options.format === THREE.RedFormat).length, 3,
+    'pressure ping-pong and divergence targets must use RedFormat');
+  records.targets.forEach((target) => {
+    assert.equal(target.options.type, THREE.HalfFloatType, 'every target must use HalfFloatType');
+    assert.equal(target.options.minFilter, THREE.LinearFilter, 'every target must be linearly sampled');
+    assert.equal(target.options.magFilter, THREE.LinearFilter, 'every target must be linearly sampled');
+    assert.equal(target.options.wrapS, THREE.ClampToEdgeWrapping, 'targets must clamp horizontally');
+    assert.equal(target.options.wrapT, THREE.ClampToEdgeWrapping, 'targets must clamp vertically');
+    assert.equal(target.options.depthBuffer, false, 'targets need no depth buffer');
+    assert.equal(target.options.stencilBuffer, false, 'targets need no stencil buffer');
+    assert.equal(target.options.samples, 0, 'targets must not allocate MSAA samples');
+    assert.equal(target.texture.colorSpace, THREE.NoColorSpace, 'solver textures must remain linear data');
+    assert.equal(target.texture.generateMipmaps, false, 'solver textures must not generate mipmaps');
   });
-  const target = records.targets[0];
-  assertApproximateArray(Array.from(shader.uniforms.uViewport.value), [0, 1000, 1280, 720],
-    'viewport document origin and CSS dimensions must reach the shader');
-  assertApproximateArray(Array.from(shader.uniforms.uDocumentSize.value), [1280, 1800],
-    'document geometry must reach the shader');
-  assertApproximateArray(Array.from(shader.uniforms.uContentRect.value), [290, 990, 92, 0.58],
-    'the reading lane must reach the shader with a restrained minimum opacity');
-  assert.deepEqual(
-    [scene.children[0].position.x, scene.children[0].position.y, scene.children[0].position.z],
-    [640, 360, 4],
-    'the composite plane must remain centered in the actor camera viewport'
-  );
-  assert.deepEqual(
-    [scene.children[0].scale.x, scene.children[0].scale.y, scene.children[0].scale.z],
-    [1280, 720, 1],
-    'the composite plane must cover the complete actor camera viewport'
-  );
-  assert.ok(target.width <= Math.floor(1280 * 0.72) && target.height <= Math.floor(720 * 0.72),
-    'desktop internal resolution must stay below one CSS pixel even when renderer DPR is high');
-  assert.ok(target.width * target.height <= 900000, 'the private target must respect the global pixel cap');
-  assert.deepEqual(Array.from(shader.uniforms.uTargetSize.value), [target.width, target.height],
-    'actual bounded target dimensions must reach edge-antialiasing uniforms');
+  assert.equal(scene.children.length, 1, 'the actor scene receives one composite plane');
+  assert.equal(records.meshes.length, 2, 'all solver passes share one quad plus one composite plane');
+  const composite = scene.children[0];
+  assert.equal(composite.position.z, 4, 'the composite occupies authored depth four');
+  assert.equal(composite.renderOrder, -10, 'the composite stays behind the actor');
+  assert.ok(composite.material instanceof THREE.ShaderMaterial, 'the composite uses a custom ShaderMaterial');
+  assert.equal(composite.material.blending, THREE.NormalBlending, 'the composite uses normal alpha blending');
+  assert.equal(composite.material.depthTest, true, 'the composite participates in authored depth');
+  assert.equal(composite.material.depthWrite, false, 'the transparent composite must not write depth');
+  assert.ok(!records.materials.some((material) => material instanceof THREE.MeshBasicMaterial),
+    'MeshBasicMaterial must not flatten the wet material');
+  assert.equal(typeof field.addImpactBatch, 'function', 'the field exposes batched physical impacts');
+}
 
-  field.setViewport({
-    width: 5000, height: 3200, scrollX: 0, scrollY: 0,
-    documentWidth: 5000, documentHeight: 9000
+function testFullDocumentSizingAndStableScroll() {
+  const { records, field } = createFieldHarness();
+  setDesktopViewport(field);
+  const [velocityA, velocityB, pressureA, pressureB, divergence, pigmentA, pigmentB] = records.targets;
+  [velocityA, velocityB, pressureA, pressureB, divergence].forEach((target) => {
+    assert.ok(target.width <= Math.floor(1280 * 0.18), 'desktop velocity grid uses at most 0.18 document scale');
+    assert.ok(target.height <= Math.floor(3600 * 0.18), 'desktop velocity grid uses at most 0.18 document scale');
+    assert.ok(target.width * target.height <= 300000, 'desktop velocity grid respects 300k cap');
+    assert.ok(target.width <= 1024 && target.height <= 1024, 'velocity grid respects maxTextureSize');
   });
-  assert.ok(target.width * target.height <= 900000,
-    'oversized viewports must scale down without reallocating the target');
-  assert.equal(records.targets.length, 1, 'viewport changes must resize instead of creating more targets');
+  [pigmentA, pigmentB].forEach((target) => {
+    assert.ok(target.width <= Math.floor(1280 * 0.30), 'desktop pigment grid uses at most 0.30 document scale');
+    assert.ok(target.height <= Math.floor(3600 * 0.30), 'desktop pigment grid uses at most 0.30 document scale');
+    assert.ok(target.width * target.height <= 720000, 'desktop pigment grid respects 720k cap');
+    assert.ok(target.width <= 1024 && target.height <= 1024, 'pigment grid respects maxTextureSize');
+  });
 
+  const resizeCounts = records.targets.map((target) => target.setSizeCount);
+  setDesktopViewport(field, { scrollY: 1700 });
+  assert.deepEqual(records.targets.map((target) => target.setSizeCount), resizeCounts,
+    'pure scrolling must not resize or reseed document-space targets');
+  assert.deepEqual(
+    [field._debug.compositeUniforms.uViewport.value[0], field._debug.compositeUniforms.uViewport.value[1]],
+    [0, 1700],
+    'scroll still updates the document sampling origin'
+  );
+}
+
+function testSolverPassesCausalRevealAndReset() {
+  const { records, renderer, model, field } = createFieldHarness();
+  setDesktopViewport(field);
   field.setEmitter({
     active: true,
-    origin: { x: 980, y: 1600 },
-    front: { x: 720, y: 1540 },
-    pressure: 0.8,
+    origin: { x: 970, y: 1580 },
+    front: { x: 730, y: 1520 },
+    pressure: 0.84,
     palettePhase: 0.62
   });
-  assertApproximateArray(Array.from(shader.uniforms.uEmitterPath.value), [980, 1600, 720, 1540],
-    'the bucket origin and liquid front must reach the emitter path uniform');
-  assertApproximateArray(Array.from(shader.uniforms.uEmitterStyle.value), [1, 0.8, 0.62, 0],
-    'emitter activity, pressure, and pigment phase must reach the shader');
-  assert.equal(field.update(1 / 60, 1.2), true, 'a live update must render the private surface');
-  assert.equal(records.meshes.length, 2, 'uploading gestures must never create per-gesture meshes');
-  assert.equal(records.renderCalls.at(-1).target, target, 'the private scene must render into its bounded target');
-  assert.equal(harness.renderer.currentTarget, null, 'field rendering must restore the caller render target');
+  assert.equal(field.update(1 / 30, 1), true, 'the initial reveal runs a solver step');
+  const names = records.renderCalls.map((call) => call.materialName);
+  assert.ok(names.includes('paint-source-velocity'), 'impacts inject local momentum');
+  assert.ok(names.includes('paint-source-pigment'), 'impacts inject pigment');
+  assert.ok(names.includes('paint-advect-viscoplastic-velocity'), 'velocity is semi-Lagrangian advected');
+  assert.ok(names.includes('paint-divergence'), 'the solver measures divergence');
+  assert.equal(names.filter((name) => name === 'paint-pressure-jacobi').length, 8,
+    'desktop uses eight pressure Jacobi iterations per step');
+  assert.ok(names.includes('paint-gradient-subtract'), 'pressure projection removes divergence');
+  assert.ok(names.includes('paint-advect-pigment'), 'pigment is advected through velocity');
+  assert.equal(renderer.currentTarget, null, 'the solver restores the caller render target');
+
+  field.setEmitter({ active: false, origin: { x: 970, y: 1580 }, pressure: 0, palettePhase: 0.62 });
+  records.renderCalls.length = 0;
+  setDesktopViewport(field, { scrollY: 1200 });
+  field.update(1 / 30, 1.04);
+  assert.ok(!records.renderCalls.some((call) => call.materialName === 'paint-clear'),
+    'scrolling alone must never clear/reseed paint');
+  assert.ok(!records.renderCalls.some((call) => call.materialName === 'paint-source-pigment'),
+    'an unchanged reveal must not be injected twice');
+
+  records.renderCalls.length = 0;
+  model.setReveal('landing:thoughts', 0.82);
+  field.update(1 / 30, 1.08);
+  assert.ok(records.renderCalls.some((call) => call.materialName === 'paint-source-pigment'),
+    'only the newly revealed interval is causally injected');
+  assert.ok(field._debug.lastRevealIntervals.some((interval) =>
+    interval.id === 'landing:thoughts' && interval.from > 0.64 && interval.to === 0.82),
+  'the reveal source begins at the prior reveal, not at the gesture origin');
+
+  records.renderCalls.length = 0;
+  model.reflow('landing:thoughts', { to: { x: 180, y: 1320 } });
+  field.update(1 / 30, 1.12);
+  assert.equal(records.renderCalls.filter((call) => call.materialName === 'paint-clear').length, 7,
+    'a layout revision clears every solver target exactly once');
+  assert.ok(records.renderCalls.some((call) => call.materialName === 'paint-source-pigment'),
+    'a layout revision reseeds the current revealed geometry once');
 }
 
-function testMobileResolutionAndAmbientFrameBudgets() {
-  const desktop = createFieldHarness(false);
-  const desktopViewport = {
-    width: 1280, height: 720, scrollX: 0, scrollY: 1000,
-    documentWidth: 1280, documentHeight: 1800
-  };
-  const desktopEmitter = {
-    active: true,
-    origin: { x: 980, y: 1600 },
-    front: { x: 720, y: 1540 },
-    pressure: 0.8,
-    palettePhase: 0.62
-  };
-  desktop.field.setViewport(desktopViewport);
-  desktop.field.setEmitter(desktopEmitter);
-  desktop.field.update(1 / 60, 0);
+function testImpactBatchFixedStepAndMobileBudget() {
+  const desktop = createFieldHarness();
+  setDesktopViewport(desktop.field);
+  desktop.field.update(1 / 30, 0);
   desktop.records.renderCalls.length = 0;
-  desktop.field.setAmbient(true);
-  for (let frame = 1; frame <= 60; frame += 1) {
-    desktop.field.setViewport({ ...desktopViewport });
-    desktop.field.setEmitter({
-      ...desktopEmitter,
-      origin: { ...desktopEmitter.origin },
-      front: { ...desktopEmitter.front }
-    });
-    desktop.field.update(1 / 60, frame / 60);
-  }
-  assert.ok(desktop.records.renderCalls.length >= 23 && desktop.records.renderCalls.length <= 25,
-    'identical per-frame inputs must not defeat the desktop 24fps ambient throttle');
+  assert.equal(desktop.field.addImpactBatch([
+    { origin: { x: 900, y: 1500 }, velocity: { x: -180, y: 40 }, radius: 48, amount: 0.7, palettePhase: 0.1 },
+    { origin: { x: 840, y: 1515 }, velocity: { x: -120, y: 90 }, radius: 35, amount: 0.5, palettePhase: 0.72 }
+  ]), 2, 'valid impacts are queued as one batch');
+  desktop.field.update(1, 1);
+  assert.ok(desktop.records.renderCalls.filter((call) =>
+    call.materialName === 'paint-advect-viscoplastic-velocity').length <= 2,
+  'desktop catch-up is capped at two fixed 1/30 steps');
+  const sourceUniform = desktop.records.materials.find((material) => material.name === 'paint-source-pigment').uniforms;
+  assert.deepEqual(Array.from(sourceUniform.uImpactPointRadius.value.slice(0, 2)), [900, 1500],
+    'the source is centered exactly at the submitted local origin');
 
   const mobile = createFieldHarness(true);
-  const mobileViewport = {
-    width: 390, height: 844, scrollX: 0, scrollY: 900,
-    documentWidth: 390, documentHeight: 2600
-  };
-  const mobileEmitter = {
-    active: true,
-    origin: { x: 340, y: 1560 },
-    front: { x: 96, y: 1510 },
-    pressure: 0.72,
-    palettePhase: 0.18
-  };
-  mobile.field.setViewport(mobileViewport);
-  mobile.field.setEmitter(mobileEmitter);
-  const target = mobile.records.targets[0];
-  assert.ok(target.width <= Math.floor(390 * 0.55) && target.height <= Math.floor(844 * 0.55),
-    'mobile internal resolution must use the smaller 0.55 CSS-pixel scale');
-  mobile.field.update(1 / 60, 0);
-  mobile.records.renderCalls.length = 0;
-  mobile.field.setAmbient(true);
-  for (let frame = 1; frame <= 60; frame += 1) {
-    mobile.field.setViewport({ ...mobileViewport });
-    mobile.field.setEmitter({
-      ...mobileEmitter,
-      origin: { ...mobileEmitter.origin },
-      front: { ...mobileEmitter.front }
-    });
-    mobile.field.update(1 / 60, frame / 60);
-  }
-  assert.ok(mobile.records.renderCalls.length >= 14 && mobile.records.renderCalls.length <= 16,
-    'identical per-frame inputs must not defeat the mobile 15fps ambient throttle');
+  mobile.field.setViewport({ width: 390, height: 844, scrollX: 0, scrollY: 900,
+    documentWidth: 390, documentHeight: 5000 });
+  const velocity = mobile.records.targets[0];
+  const pigment = mobile.records.targets[5];
+  assert.ok(velocity.width <= Math.floor(390 * 0.14) && velocity.height <= Math.floor(5000 * 0.14),
+    'mobile velocity uses the 0.14 document scale');
+  assert.ok(velocity.width * velocity.height <= 160000, 'mobile velocity respects the 160k cap');
+  assert.ok(pigment.width <= Math.floor(390 * 0.38) && pigment.height <= Math.floor(5000 * 0.38),
+    'mobile pigment uses the 0.38 document scale');
+  assert.ok(pigment.width * pigment.height <= 420000, 'mobile pigment respects the 420k cap');
+  mobile.field.update(1, 1);
+  assert.equal(mobile.records.renderCalls.filter((call) =>
+    call.materialName === 'paint-advect-viscoplastic-velocity').length, 1,
+  'mobile catch-up is capped at one fixed 1/20 step');
+  assert.equal(mobile.records.renderCalls.filter((call) => call.materialName === 'paint-pressure-jacobi').length, 4,
+    'mobile uses four pressure Jacobi iterations');
 }
 
-function testResponsiveModeCanCrossTheMobileBreakpoint() {
-  const harness = createFieldHarness(false);
-  const viewport = {
-    width: 1280, height: 720, scrollX: 0, scrollY: 1000,
-    documentWidth: 1280, documentHeight: 1800
-  };
-  harness.field.setViewport(viewport);
-  const target = harness.records.targets[0];
-  const desktopSize = [target.width, target.height];
+function testAmbientFreezeFeatureGateAndDisposal() {
+  assert.throws(() => createFieldHarness(false, false), /EXT_color_buffer_float/,
+    'the field rejects devices without renderable floating-point targets');
 
-  assert.equal(typeof harness.field.setMobile, 'function',
-    'the liquid field must adapt when a live viewport crosses the mobile breakpoint');
-  harness.field.setMobile(true);
-  assert.ok(
-    target.width <= Math.floor(viewport.width * 0.55) &&
-      target.height <= Math.floor(viewport.height * 0.55),
-    'crossing to mobile must immediately apply the smaller internal resolution'
-  );
-  assert.notDeepEqual([target.width, target.height], desktopSize,
-    'crossing to mobile must actually resize an existing desktop target');
-  assert.equal(harness.records.targets.length, 1,
-    'responsive mode changes must resize rather than allocate another target');
-
-  harness.field.update(1 / 60, 0);
+  const harness = createFieldHarness();
+  setDesktopViewport(harness.field);
+  harness.field.update(1 / 30, 0);
   harness.records.renderCalls.length = 0;
   harness.field.setAmbient(true);
-  for (let frame = 1; frame <= 60; frame += 1) {
-    harness.field.setMobile(true);
-    harness.field.update(1 / 60, frame / 60);
-  }
-  assert.ok(harness.records.renderCalls.length >= 14 && harness.records.renderCalls.length <= 16,
-    'crossing to mobile must switch ambient rendering to about 15fps');
+  for (let frame = 1; frame <= 60; frame += 1) harness.field.update(1 / 60, frame / 60);
+  const steps = harness.records.renderCalls.filter((call) =>
+    call.materialName === 'paint-advect-viscoplastic-velocity').length;
+  assert.ok(steps >= 23 && steps <= 25, 'desktop ambient simulation runs at about 24fps');
 
-  harness.field.setMobile(false);
-  assert.deepEqual([target.width, target.height], desktopSize,
-    'crossing back to desktop must restore desktop target density');
-  harness.field.update(1 / 60, 2);
-  harness.records.renderCalls.length = 0;
-  harness.field.setAmbient(true);
-  for (let frame = 1; frame <= 60; frame += 1) {
-    harness.field.setMobile(false);
-    harness.field.update(1 / 60, 2 + frame / 60);
-  }
-  assert.ok(harness.records.renderCalls.length >= 23 && harness.records.renderCalls.length <= 25,
-    'crossing back to desktop must restore the 24fps ambient budget');
-}
-
-function testFreezeAndDisposalAreStable() {
-  const harness = createFieldHarness(false);
-  harness.field.setViewport({
-    width: 1280, height: 720, scrollX: 0, scrollY: 1000,
-    documentWidth: 1280, documentHeight: 1800
-  });
-  harness.field.update(1 / 60, 1.2);
-  const shader = harness.records.materials.find((material) => material.fragmentShader);
   harness.field.freeze();
-  const frozenTime = shader.uniforms.uTime.value;
+  harness.records.renderCalls.length = 0;
   harness.field.update(1, 99);
-  assert.equal(shader.uniforms.uTime.value, frozenTime, 'freeze must stop liquid morphology time');
-
+  assert.equal(harness.records.renderCalls.length, 0, 'freeze stops the solver completely');
   harness.field.dispose();
   harness.field.dispose();
-  assert.equal(harness.records.targets[0].disposeCount, 1, 'double disposal must release the target once');
+  assert.ok(harness.records.targets.every((target) => target.disposeCount === 1),
+    'double disposal releases every target exactly once');
   assert.ok(harness.records.geometries.every((geometry) => geometry.disposeCount === 1),
-    'double disposal must release each shared geometry once');
+    'double disposal releases shared geometry exactly once');
   assert.ok(harness.records.materials.every((material) => material.disposeCount === 1),
-    'double disposal must release each shared material once');
-  assert.equal(harness.scene.children.length, 0, 'disposal must remove the composite from the actor scene');
+    'double disposal releases each shader exactly once');
+  assert.equal(harness.scene.children.length, 0, 'disposal removes the visible composite');
 }
 
-function testShaderContainsTheContinuousLiquidMaterial() {
-  assert.match(fieldSource, /quadraticPoint\s*\(/,
-    'the shader must measure the authored quadratic centerline');
-  assert.match(fieldSource, /for\s*\(\s*int\s+sampleIndex\s*=\s*0\s*;\s*sampleIndex\s*<\s*9\s*;/,
-    'quadratic distance sampling must use a compile-time bounded loop');
-  assert.match(fieldSource, /smoothMinPolynomial\s*\(/,
-    'gestures must merge with a polynomial smooth-min instead of exposing capsule overlaps');
-  assert.match(fieldSource, /domainWarp\s*\(/,
-    'the surface boundary must receive low-frequency organic warping');
-  assert.match(fieldSource, /quadraticDistanceSample\s*\(/,
-    'the field must retain closest-path position so pigment can visibly travel along the pour');
-  assert.match(fieldSource, /spreadRamp[\s\S]{0,260}localWidth/,
-    'each landing must widen organically from a narrow bucket neck instead of forming a giant capsule');
-  assert.match(fieldSource, /CONTOUR_BANDS\s*=\s*12/,
-    'the liquid body must use twelve narrow marbled contour strata');
-  assert.match(fieldSource, /SPECTRUM_STRIPE_SPAN\s*=\s*0\.8[0-9]/,
-    'one broad liquid surface must carry nearly the complete ordered pigment spectrum');
-  assert.match(fieldSource, /normalizedStripe[\s\S]{0,260}SPECTRUM_STRIPE_SPAN/,
-    'stripe pigment must derive from normalized cross-surface position rather than neighboring hues');
-  assert.match(fieldSource, /nearestTravel[\s\S]{0,400}uTime/,
-    'internal pigment motion must advance along the authored path over time');
-  assert.match(fieldSource, /fwidth\s*\(/,
-    'contour transitions must use derivative antialiasing instead of hard posterized edges');
-  assert.match(fieldSource, /strataShadow[\s\S]{0,300}bandFraction/,
-    'each contour stratum must have a dark wet seam rather than one flat rainbow fill');
-  assert.match(fieldSource, /strataRidge[\s\S]{0,300}bandFraction/,
-    'each contour stratum must carry a narrow glossy crest');
-  assert.match(fieldSource, /surfaceNormal/,
-    'the wet surface must derive a stable light-facing normal from its closest centerline');
-  assert.match(fieldSource, /surfaceNormal\s*=\s*normalize\(nearestProbePoint\s*-\s*nearestCenter/,
-    'wet-light normals must use the same warped probe coordinate as the liquid distance field');
-  assert.match(fieldSource, /wetSpecular/,
-    'the liquid must carry a narrow directional wet highlight');
-  assert.match(fieldSource, /fresnelEdge/,
-    'the liquid must carry a bright wet meniscus at its outer edge');
-  assert.match(fieldSource, /darkWetEdge/,
-    'the liquid must ground its volume with a dark capillary boundary');
-  assert.match(fieldSource, /readingLane/,
-    'the field must organically soften beneath the central reading column');
-  assert.match(fieldSource, /if\s*\(\s*endShape\.w\s*>\s*0\.0001\s*\)/,
-    'a zero-reveal gesture must not render a full-width starting blob');
-  assert.match(fieldSource, /emitterDistance\s*=\s*lineSegmentDistance\s*\(\s*documentPoint\s*,/,
-    'the live emitter capsule must remain attached to the unwarped bucket position');
-  assert.doesNotMatch(fieldSource, /emitterDistance\s*=\s*lineSegmentDistance\s*\(\s*warpedPoint\s*,/,
-    'domain warping must not pull the live liquid source away from the bucket');
+function testShaderAndSourceContracts() {
+  assert.doesNotMatch(fieldSource, /CONTOUR_BANDS|quadraticDistanceSample|smoothMinPolynomial|MeshBasicMaterial/,
+    'the fake contour/SDF ribbon renderer must be absent');
+  assert.match(fieldSource, /getSimulationPacket\s*\(/,
+    'the field consumes full simulation packets for causal reveal intervals');
+  assert.match(fieldSource, /yieldStress|viscoplastic/i, 'velocity advection models a paint yield stress');
+  assert.match(fieldSource, /uDivergence/, 'pressure solves from a divergence texture');
+  assert.match(fieldSource, /uPressure/, 'the projection pass samples pressure');
+  assert.match(fieldSource, /gravity|drip/i, 'pigment advection includes gravity-driven drips');
+  assert.match(fieldSource, /kubelkaMunk/i, 'the composite uses Kubelka-Munk pigment reflectance');
+  assert.match(fieldSource, /thicknessNormal/i, 'the wet material derives normals from thickness');
+  assert.match(fieldSource, /wetRoughness/i, 'the wet material shapes specular response with roughness');
+  assert.match(fieldSource, /meniscus/i, 'the wet material resolves a capillary meniscus');
+  assert.match(fieldSource, /readingLane/i, 'the composite protects the reading lane');
+  assert.match(fieldSource, /projectionMatrix\s*\*\s*modelViewMatrix/,
+    'the visible vertex shader uses the actor camera projection');
+  assert.match(fieldSource, /#include <tonemapping_fragment>/,
+    'the composite participates in Three tone mapping');
+  assert.match(fieldSource, /#include <colorspace_fragment>/,
+    'the composite converts its final display color');
+  assert.doesNotMatch(fieldSource, /renderer\.setViewport\s*\(/,
+    'the solver must let render targets manage viewport state automatically');
+  assert.doesNotMatch(fieldSource, /travellingGlint|timedGlint/,
+    'wet highlights must derive from thickness, never a timed glint');
 }
 
-testOneBoundedSurfaceAndFixedUniformPacket();
-testMobileResolutionAndAmbientFrameBudgets();
-testResponsiveModeCanCrossTheMobileBreakpoint();
-testFreezeAndDisposalAreStable();
-testShaderContainsTheContinuousLiquidMaterial();
+testAllocationAndCompositeContracts();
+testFullDocumentSizingAndStableScroll();
+testSolverPassesCausalRevealAndReset();
+testImpactBatchFixedStepAndMobileBudget();
+testAmbientFreezeFeatureGateAndDisposal();
+testShaderAndSourceContracts();
 
-console.log('PASS: paint journey liquid field behavior');
+console.log('PASS: paint journey viscoplastic liquid field behavior');
