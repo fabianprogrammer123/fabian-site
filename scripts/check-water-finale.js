@@ -66,6 +66,9 @@ assert.match(source, /surface\.inject\(/,
   'jet impacts must drive the connected height field');
 assert.match(source, /event\.key\s*===\s*['"]Escape['"]/,
   'Escape must cancel and drain the finale');
+assert.match(source,
+  /event\.key\s*===\s*['"]Escape['"][\s\S]{0,180}clearParticles\(\)[\s\S]{0,120}beginDrain\(\)/,
+  'Escape must discard residual spray before draining the overlay');
 assert.match(source, /document\.addEventListener\(['"]visibilitychange['"]/,
   'hidden tabs must pause the simulation lifecycle');
 assert.match(source, /window\.addEventListener\(['"]resize['"]/,
@@ -107,6 +110,18 @@ for (let index = 0; index < surface.count; index += 1) {
   assert.ok(Number.isFinite(surface.sample(index)),
     'surface integration must remain finite');
 }
+
+const sustainedSurface = context.window.WaterFinaleModel.createSurface(128);
+for (let step = 0; step < 600; step += 1) {
+  sustainedSurface.inject(0.72, -3.4, -1.8);
+  sustainedSurface.step(1 / 60);
+}
+let maximumDisplacement = 0;
+for (let index = 0; index < sustainedSurface.count; index += 1) {
+  maximumDisplacement = Math.max(maximumDisplacement, Math.abs(sustainedSurface.sample(index)));
+}
+assert.ok(maximumDisplacement <= 54,
+  'a sustained jet must create waves without tearing the surface into an unbounded spike');
 
 for (let step = 0; step < 1600; step += 1) surface.step(1 / 60);
 assert.ok(surface.energy() < injectedEnergy * 0.12,

@@ -22,8 +22,8 @@
       for (var offset = -4; offset <= 4; offset += 1) {
         var index = clamp(center + offset, 0, count - 1);
         var weight = 1 - Math.abs(offset) / 5;
-        heights[index] += displacement * weight;
-        velocities[index] += force * weight;
+        heights[index] = clamp(heights[index] + displacement * weight, -52, 52);
+        velocities[index] = clamp(velocities[index] + force * weight, -14, 14);
       }
     }
 
@@ -40,8 +40,8 @@
       }
 
       for (var cursor = 0; cursor < count; cursor += 1) {
-        velocities[cursor] = nextVelocities[cursor];
-        heights[cursor] += velocities[cursor] * scaledDelta;
+        velocities[cursor] = clamp(nextVelocities[cursor], -14, 14);
+        heights[cursor] = clamp(heights[cursor] + velocities[cursor] * scaledDelta, -52, 52);
         if (Math.abs(heights[cursor]) < 0.00001 && Math.abs(velocities[cursor]) < 0.00001) {
           heights[cursor] = 0;
           velocities[cursor] = 0;
@@ -301,8 +301,10 @@
 
         if (particle.y >= surfaceYAt(particle.x) && fill > 0.015) {
           var impactStrength = particle.type === 0 ? 1 : 0.28;
-          surface.inject(particle.x / viewportWidth, -3.4 * impactStrength, -1.8 * impactStrength);
-          if (particle.type === 0 && random() < 0.2 + pressure * 0.12) {
+          if (particle.type !== 0 || random() < 0.28) {
+            surface.inject(particle.x / viewportWidth, -1.25 * impactStrength, -0.36 * impactStrength);
+          }
+          if (particle.type === 0 && random() < 0.14 + pressure * 0.08) {
             emitSplash(particle.x, surfaceYAt(particle.x), 0.42 + pressure * 0.46);
           }
           particle.active = false;
@@ -490,6 +492,13 @@
     return count;
   }
 
+  function clearParticles() {
+    for (var index = 0; index < particles.length; index += 1) {
+      particles[index].active = false;
+    }
+    emissionCarry = 0;
+  }
+
   function ensureFrame() {
     if (!frameRequest && !document.hidden && !reducedMotion) {
       frameRequest = window.requestAnimationFrame(frame);
@@ -586,8 +595,8 @@
     var particleCount = updateParticles(delta);
     surface.step(delta);
 
-    if (state === 'spraying' && random() < delta * 5.5) {
-      surface.inject(impactPoint.x / viewportWidth, -1.8 - random() * 2.6, -0.5 - random());
+    if (state === 'spraying' && random() < delta * 2.8) {
+      surface.inject(impactPoint.x / viewportWidth, -0.8 - random() * 1.2, -0.22 - random() * 0.35);
     } else if (state === 'settling' && targetFill > 0 && ambientClock % 2.4 < delta) {
       surface.inject(0.16 + random() * 0.68, -0.5 - random() * 0.8, 0);
     }
@@ -618,6 +627,7 @@
   function handleKeyDown(event) {
     if (event.key === 'Escape') {
       cancelled = true;
+      clearParticles();
       beginDrain();
     }
   }
