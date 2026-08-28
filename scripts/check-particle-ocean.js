@@ -62,7 +62,7 @@ assert.match(source, /gl_VertexID/,
   'the GPU must derive the particle grid without allocating per-particle objects');
 assert.match(source, /drawArrays\([^\n]*POINTS/,
   'the ocean surface must render as a point field');
-assert.match(source, /function\s+choppyWave\s*\(/,
+assert.match(source, /vec4\s+choppyWave\s*\(/,
   'the shader must shape each swell with an asymmetric choppy profile');
 assert.match(source, /DOMINANT_WAVE_DIRECTION/,
   'the surface must establish a dominant direction for connected ocean ridges');
