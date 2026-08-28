@@ -34,7 +34,10 @@ The existing monospace typography, 660px reading measure, section rhythm, and fi
 
 The primary renderer is a bounded WebGL2 perspective particle grid. Vertex displacement approximates an FFT ocean with layered spectral waves while avoiding a large WebGPU dependency. A Canvas2D fallback preserves the scroll reveal and cursor wake at lower fidelity.
 
+## Wave Geometry
+
+The particle field uses a dominant depth-facing swell so crests read as long connected ocean ridges. Restrained harmonics make each ridge asymmetric and choppy; slow phase warping creates irregular wave groups; weaker oblique waves prevent mechanical parallel bands. Particle brightness concentrates on narrow crests while faces and foreground troughs remain subdued. The effect must not become isolated hills, uniform sine bands, or a new visual layer outside the dots.
+
 ## Accessibility and Performance
 
 The canvas is decorative, fixed, excluded from the accessibility tree, and cannot receive pointer events. Navigation, links, focus states, and portrait interaction remain available above it. Particle density and pixel ratio reduce on narrow screens.
-

@@ -39,19 +39,21 @@
   }
 
   function sampleChoppySurface(fieldX, fieldY, time) {
-    const phaseWarp = Math.sin(fieldX * 0.31 + time * 0.09) * 0.72
-      + Math.sin(fieldX * 0.13 - fieldY * 0.17 - time * 0.055) * 0.46;
-    const primaryGroup = 0.97 + Math.sin(fieldX * 0.19 - fieldY * 0.11 + time * 0.075 + 0.2) * 0.25;
-    const supportingGroup = 0.97 + Math.sin(fieldX * 0.19 - fieldY * 0.11 + time * 0.075 + 2.3) * 0.25;
-    const primary = choppyWaveProfile((fieldX * 0.14 + fieldY * 0.99015) * 0.78 + time * 0.31 + 0.2 + phaseWarp)
-      * 0.62 * primaryGroup;
-    const supporting = choppyWaveProfile((fieldX * -0.10 + fieldY * 0.995) * 1.17 + time * 0.39 + 2.3 + phaseWarp * 0.52)
-      * 0.27 * supportingGroup;
-    const crossing = choppyWaveProfile((fieldX * 0.31 + fieldY * 0.951) * 1.69 + time * 0.51 + 4.1 + phaseWarp * 0.28)
-      * 0.15;
-    const chop = choppyWaveProfile((fieldX * -0.48 + fieldY * 0.877) * 2.75 + time * 0.76 + 1.4 + phaseWarp * 0.13)
-      * 0.065;
-    return primary + supporting + crossing + chop;
+    const phaseWarp = Math.sin(fieldX * 0.31 + time * 0.09) * 0.55
+      + Math.sin(fieldX * 0.13 - fieldY * 0.17 - time * 0.055) * 0.32;
+    const primaryGroup = 0.98 + Math.sin(fieldX * 0.19 - fieldY * 0.11 + time * 0.075 + 0.2) * 0.2;
+    const supportingGroup = 0.98 + Math.sin(fieldX * 0.19 - fieldY * 0.11 + time * 0.075 + 2.3) * 0.2;
+    const primary = choppyWaveProfile((fieldX * 0.14 + fieldY * 0.99015) * 0.96 + time * 0.29 + 0.2 + phaseWarp)
+      * 0.48 * primaryGroup;
+    const supporting = choppyWaveProfile((fieldX * -0.16 + fieldY * 0.987) * 1.48 + time * 0.38 + 2.3 + phaseWarp * 0.48)
+      * 0.26 * supportingGroup;
+    const crossing = choppyWaveProfile((fieldX * 0.48 + fieldY * 0.877) * 2.15 + time * 0.52 + 4.1 + phaseWarp * 0.27)
+      * 0.18;
+    const chop = choppyWaveProfile((fieldX * -0.62 + fieldY * 0.785) * 3.45 + time * 0.78 + 1.4 + phaseWarp * 0.12)
+      * 0.105;
+    const fine = choppyWaveProfile((fieldX * 0.72 + fieldY * 0.694) * 5.65 + time * 1.08 + 5.2)
+      * 0.05;
+    return primary + supporting + crossing + chop + fine;
   }
 
   window.ParticleOceanModel = { normalizeScroll, sampleChoppySurface };
@@ -116,7 +118,7 @@
         + sin(phase * 2.0 - 0.52) * 0.31
         + sin(phase * 3.0 - 1.08) * 0.095;
       float crest = pow(max(0.0, fundamental * 0.5 + 0.5), 9.0);
-      float group = mix(0.72, 1.22, smoothstep(-1.0, 1.0,
+      float group = mix(0.78, 1.18, smoothstep(-1.0, 1.0,
         sin(point.x * 0.19 - point.y * 0.11 + uTime * 0.075 + phaseOffset)));
       float height = (profile + crest * 0.22) * amplitude * group;
       vec2 horizontalDisplacement = direction * cos(phase) * amplitude * steepness * group;
@@ -124,13 +126,13 @@
     }
 
     vec4 oceanSurface(vec2 point) {
-      float phaseWarp = sin(point.x * 0.31 + uTime * 0.09) * 0.72
-        + sin(point.x * 0.13 - point.y * 0.17 - uTime * 0.055) * 0.46;
-      vec4 surface = choppyWave(point, DOMINANT_WAVE_DIRECTION, 0.78, 0.31, 0.2, 0.62, 0.48, phaseWarp);
-      surface += choppyWave(point, normalize(vec2(-0.10, 0.995)), 1.17, 0.39, 2.3, 0.27, 0.34, phaseWarp * 0.52);
-      surface += choppyWave(point, normalize(vec2(0.31, 0.951)), 1.69, 0.51, 4.1, 0.15, 0.24, phaseWarp * 0.28);
-      surface += choppyWave(point, normalize(vec2(-0.48, 0.877)), 2.75, 0.76, 1.4, 0.065, 0.12, phaseWarp * 0.13);
-      surface += choppyWave(point, normalize(vec2(0.58, 0.815)), 4.35, 1.03, 5.2, 0.026, 0.07, 0.0);
+      float phaseWarp = sin(point.x * 0.31 + uTime * 0.09) * 0.55
+        + sin(point.x * 0.13 - point.y * 0.17 - uTime * 0.055) * 0.32;
+      vec4 surface = choppyWave(point, DOMINANT_WAVE_DIRECTION, 0.96, 0.29, 0.2, 0.48, 0.50, phaseWarp);
+      surface += choppyWave(point, normalize(vec2(-0.16, 0.987)), 1.48, 0.38, 2.3, 0.26, 0.36, phaseWarp * 0.48);
+      surface += choppyWave(point, normalize(vec2(0.48, 0.877)), 2.15, 0.52, 4.1, 0.18, 0.25, phaseWarp * 0.27);
+      surface += choppyWave(point, normalize(vec2(-0.62, 0.785)), 3.45, 0.78, 1.4, 0.105, 0.14, phaseWarp * 0.12);
+      surface += choppyWave(point, normalize(vec2(0.72, 0.694)), 5.65, 1.08, 5.2, 0.05, 0.08, 0.0);
       return surface;
     }
 
@@ -156,26 +158,30 @@
       float displacedDepth = clamp(depth + surfaceSample.z * mix(0.004, 0.038, depth), 0.0, 1.08);
       float horizon = mix(0.53, 0.60, uScroll);
       float projectedY = mix(horizon, -1.12, displacedDepth);
-      projectedY += height * mix(0.022, 0.205, displacedDepth);
+      projectedY += height * mix(0.018, 0.18, displacedDepth);
 
-      float spread = mix(0.34, 1.36, pow(depth, 0.72));
+      float spread = mix(0.56, 1.34, pow(depth, 0.72));
       float horizontalDisplacement = surfaceSample.x * mix(0.004, 0.052, displacedDepth);
       float projectedX = (uv.x - 0.5) * 2.0 * spread + horizontalDisplacement;
       projectedX += (uPointer.x - 0.5) * uPointerEnergy * 0.012 * depth;
 
-      float slopeLight = smoothstep(0.035, 0.30, length(surfaceSample.xz));
-      float crest = smoothstep(0.035, 0.23, surfaceSample.w) + slopeLight * 0.28;
+      float slopeLight = smoothstep(0.045, 0.28, length(surfaceSample.xz));
+      float crestBreakup = smoothstep(-0.42, 0.82,
+        sin(field.x * 1.43 + sin(field.y * 0.37) + uTime * 0.24)
+        + sin(field.x * 3.17 - field.y * 0.29 - uTime * 0.18) * 0.34);
+      float crest = smoothstep(0.022, 0.165, surfaceSample.w) * mix(0.58, 1.0, crestBreakup);
+      crest += slopeLight * crest * 0.10;
       crest += wakeEnvelope * uPointerEnergy * 0.45;
       crest = clamp(crest, 0.0, 1.0);
       float reveal = mix(0.012, 1.0, smoothstep(0.02, 0.50, uScroll));
       float horizonFade = smoothstep(0.0, 0.075, uv.y);
-      float readingQuiet = mix(0.46, 1.0, smoothstep(0.22, 0.72, abs(projectedX)));
+      float readingQuiet = mix(0.62, 1.0, smoothstep(0.22, 0.72, abs(projectedX)));
       float faceLight = mix(0.14, 0.48, depth);
 
-      vAlpha = reveal * horizonFade * readingQuiet * (0.022 + faceLight * 0.30 + crest * 0.78);
+      vAlpha = reveal * horizonFade * readingQuiet * (0.012 + faceLight * 0.22 + crest * 0.78);
       vCrest = crest;
       vDepth = depth;
-      gl_PointSize = min(6.4, (mix(0.50, 1.58, depth) + crest * 2.05 + wakeEnvelope * uPointerEnergy * 0.82) * uPixelRatio);
+      gl_PointSize = min(5.6, (mix(0.46, 1.35, depth) + crest * 1.55 + wakeEnvelope * uPointerEnergy * 0.72) * uPixelRatio);
       gl_Position = vec4(projectedX, projectedY, 0.0, 1.0);
     }
   `;
@@ -330,7 +336,7 @@
         const depth = Math.pow(rawDepth, 0.82);
         const horizon = height * (0.205 - scroll * 0.035);
         const baseY = horizon + depth * height * 0.84;
-        const spread = 0.34 + Math.pow(depth, 0.72) * 1.02;
+        const spread = 0.56 + Math.pow(depth, 0.72) * 0.78;
 
         for (let column = 0; column < columns; column += 1) {
           const u = column / Math.max(1, columns - 1);
@@ -345,13 +351,13 @@
           const wake = Math.sin(distance * 52 - time * 5.4) * wakeEnvelope * cursor.energy;
           const wave = surface * (0.74 + scroll * 0.38) + wake * 0.54;
           const x = width * (0.5 + fieldX * 0.5);
-          const y = baseY - wave * height * (0.011 + depth * 0.092);
+          const y = baseY - wave * height * (0.009 + depth * 0.081);
           if (x < -4 || x > width + 4 || y < -4 || y > height + 4) continue;
 
-          const crest = smoothstep(0.31, 0.91, wave + depth * 0.025);
-          const readingQuiet = 0.46 + smoothstep(0.22, 0.72, Math.abs(fieldX)) * 0.54;
-          const alpha = Math.min(0.92, reveal * readingQuiet * (0.022 + depth * 0.15 + crest * 0.66));
-          const radius = 0.3 + depth * 0.62 + crest * 0.58;
+          const crest = smoothstep(0.28, 0.82, wave + depth * 0.02);
+          const readingQuiet = 0.62 + smoothstep(0.22, 0.72, Math.abs(fieldX)) * 0.38;
+          const alpha = Math.min(0.92, reveal * readingQuiet * (0.014 + depth * 0.08 + crest * 0.7));
+          const radius = 0.25 + depth * 0.5 + crest * 0.5;
           context.beginPath();
           context.fillStyle = `rgba(${Math.round(177 + crest * 60)}, ${Math.round(190 + crest * 54)}, ${Math.round(197 + crest * 58)}, ${alpha})`;
           context.arc(x, y, radius, 0, Math.PI * 2);
