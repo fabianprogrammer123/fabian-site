@@ -253,3 +253,5 @@ for text in \
 done
 
 printf 'PASS: homepage CV and navigation contract\n'
+
+node "$root/scripts/check-particle-ocean.js"
