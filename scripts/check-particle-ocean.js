@@ -62,6 +62,18 @@ assert.match(source, /gl_VertexID/,
   'the GPU must derive the particle grid without allocating per-particle objects');
 assert.match(source, /drawArrays\([^\n]*POINTS/,
   'the ocean surface must render as a point field');
+assert.match(source, /function\s+choppyWave\s*\(/,
+  'the shader must shape each swell with an asymmetric choppy profile');
+assert.match(source, /DOMINANT_WAVE_DIRECTION/,
+  'the surface must establish a dominant direction for connected ocean ridges');
+assert.match(source, /phaseWarp/,
+  'large wave groups must vary instead of repeating at a fixed interval');
+assert.match(source, /horizontalDisplacement/,
+  'the point field must lean with its waves to preserve three-dimensional volume');
+assert.match(source, /function\s+sampleChoppySurface\s*\(/,
+  'the Canvas2D fallback must preserve the approved wave profile');
+assert.doesNotMatch(source, /foam|mist|sprayTexture/,
+  'the refinement must not add visual layers outside the dotted surface');
 assert.match(source, /uPointerEnergy/,
   'the shader must receive cursor energy for a localized wake');
 assert.match(source, /addEventListener\(['"]pointermove['"]/,
