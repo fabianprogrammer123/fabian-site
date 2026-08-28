@@ -26,14 +26,17 @@ const style = waterPage.match(/<style>([\s\S]*?)<\/style>/)?.[1] || '';
 
 assert.match(waterPage,
   /<canvas[^>]+id="water-screen"[^>]+class="water-screen"[^>]+aria-hidden="true"/,
-  'the water version needs one decorative screen-sized canvas');
+  'the water version needs a screen-sized material canvas');
+assert.match(waterPage,
+  /<canvas[^>]+id="water-spray"[^>]+class="water-spray"[^>]+aria-hidden="true"/,
+  'the water version needs an independent spray canvas so the jet stays crisp');
 assert.match(waterPage, /id="water-nozzle"/,
   'the character SVG needs a visible nozzle that owns the jet origin');
 assert.match(waterPage, /id="water-finale"[^>]+data-water-state="idle"/,
   'the finale must expose its choreography state');
 assert.match(waterPage, /src="\.\.\/assets\/homepage-navigation\.js"/,
   'the water route must load navigation from the parent asset directory');
-assert.match(waterPage, /src="\.\.\/assets\/water-finale\.js"/,
+assert.match(waterPage, /src="\.\.\/assets\/water-finale\.js(?:\?v=\d+)?"/,
   'the water route must load its focused controller');
 assert.match(waterPage, /href="\.\.\/fine-tuned-open-source-models\/"/,
   'the first article link must remain valid from /water/');
@@ -44,6 +47,9 @@ assert.doesNotMatch(waterPage, /paint-journey|assets\/paint-finale\.js|id="paint
 assert.match(style,
   /\.water-screen\s*\{[^}]*position:\s*fixed;[^}]*pointer-events:\s*none;[^}]*z-index:\s*50;/,
   'the water canvas must fill the viewport without intercepting input');
+assert.match(style,
+  /\.water-spray\s*\{[^}]*position:\s*fixed;[^}]*pointer-events:\s*none;[^}]*z-index:\s*51;/,
+  'the spray layer must stay above the water material without intercepting input');
 assert.match(style,
   /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*transition:\s*none\s*!important/,
   'the page must disable choreography transitions for reduced motion');
@@ -64,6 +70,26 @@ assert.match(source, /nozzle\.getBoundingClientRect\(\)/,
   'the jet origin must be measured from the visible SVG nozzle');
 assert.match(source, /surface\.inject\(/,
   'jet impacts must drive the connected height field');
+assert.match(source, /getContext\(['"]webgl2['"]/,
+  'the primary water material must use a WebGL2 renderer');
+assert.match(source, /function\s+createWaterMaterial\s*\(/,
+  'the physically inspired water material must be isolated from the choreography');
+assert.match(source, /cloneNode\(false\)[\s\S]{0,320}getContext\(['"]2d['"]\)/,
+  'a shader compile failure must replace the locked WebGL canvas with a 2D fallback');
+assert.match(source, /exp\(-absorption\s*\*\s*depth\)/,
+  'depth must drive wavelength-dependent water absorption');
+assert.match(source, /fresnel/i,
+  'surface shading must include angle-dependent reflection');
+assert.match(source, /domainWarp/i,
+  'caustics must use organic domain warping instead of repeated stripes');
+assert.match(source, /function\s+drawPourStrand\s*\(/,
+  'the pouring stream must be assembled from irregular animated strands');
+assert.match(source, /spawnParticle\(3,/,
+  'the impact must seed restrained underwater air bubbles');
+assert.doesNotMatch(source, /for\s*\(var band\s*=\s*0;\s*band\s*<\s*6/,
+  'the old wallpaper-like horizontal caustic bands must be removed');
+assert.doesNotMatch(source, /setLineDash\(/,
+  'the stream must not use a mechanical dashed highlight');
 assert.match(source, /event\.key\s*===\s*['"]Escape['"]/,
   'Escape must cancel and drain the finale');
 assert.match(source,
