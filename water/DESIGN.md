@@ -25,18 +25,20 @@ The existing monospace typography, 660px reading measure, section rhythm, and fi
 
 ## Motion
 
-- The ocean evolves continuously through layered directional waves.
+- The ocean evolves continuously through broad lateral and diagonal cross-swells whose phase speeds oppose one another.
 - Scroll progress controls exposure, particle prominence, wave amplitude, and horizon height.
-- Pointer movement produces a localized wake with eased position and decaying energy.
+- Pointer movement produces a localized world-space wake with eased position and decaying energy.
 - Motion pauses with the document and renders a calm static frame for reduced-motion visitors.
 
 ## Rendering
 
-The primary renderer is a bounded WebGL2 perspective particle grid. Vertex displacement approximates an FFT ocean with layered spectral waves while avoiding a large WebGPU dependency. A Canvas2D fallback preserves the scroll reveal and cursor wake at lower fidelity.
+The primary renderer is a bounded WebGL2 particle grid projected through a low, pitched virtual camera. Points begin on a world-space sea, receive three-axis displacement, and are then divided by camera depth, creating natural horizon compression, foreground scale, and parallax without a large WebGPU dependency. A Canvas2D fallback shares the analytical surface sampler and camera projection so it preserves the same spatial character at lower density.
 
 ## Wave Geometry
 
-The particle field uses a dominant depth-facing swell so crests read as long connected ocean ridges. Restrained harmonics make each ridge asymmetric and choppy; slow phase warping creates irregular wave groups; weaker oblique waves prevent mechanical parallel bands. Particle brightness concentrates on narrow crests while faces and foreground troughs remain subdued. The effect must not become isolated hills, uniform sine bands, or a new visual layer outside the dots.
+The primary swell crosses the viewport at an oblique, mostly lateral angle. A slower opposing cross-swell intersects it to create rolling volume rather than parallel bands, while restrained harmonics make selected ridges asymmetric and choppy. Slow phase warping creates irregular wave groups without making the whole surface translate as one sheet. Gerstner-style displacement leans every crest across horizontal, vertical, and depth axes.
+
+Particle spacing and size are perspective-aware: distant points compress into a continuous horizon while nearby points spread and reveal curvature. Brightness is derived from analytical surface slope and a restrained camera-facing crest response, leaving faces and foreground troughs subdued. The effect must not become isolated hills, uniform sine bands, a top-to-bottom conveyor, or a visual layer outside the dots.
 
 ## Accessibility and Performance
 

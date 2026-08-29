@@ -32,6 +32,8 @@ assert.match(oceanPage,
   'the experimental route needs one decorative particle-ocean canvas');
 assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js(?:\?v=\d+)?"/,
   'the route must load the focused particle-ocean controller');
+assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=3"/,
+  'the route must cache-bust the oblique 3D ocean revision');
 assert.doesNotMatch(oceanPage,
   /water-finale|water-screen|water-spray|water-nozzle|water-sprayer|spraying|draining/,
   'the discarded character and rising-water finale must be completely removed');
