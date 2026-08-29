@@ -1,0 +1,7 @@
+{
+  "name": "fabian-site",
+  "private": true,
+  "scripts": {
+    "build": "bash scripts/build-sites-static.sh"
+  }
+}
