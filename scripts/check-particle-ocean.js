@@ -32,8 +32,8 @@ assert.match(oceanPage,
   'the experimental route needs one decorative particle-ocean canvas');
 assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js(?:\?v=\d+)?"/,
   'the route must load the focused particle-ocean controller');
-assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=4"/,
-  'the route must cache-bust the persistent wake revision');
+assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=5"/,
+  'the route must cache-bust the corrected perspective wake revision');
 assert.doesNotMatch(oceanPage,
   /water-finale|water-screen|water-spray|water-nozzle|water-sprayer|spraying|draining/,
   'the discarded character and rising-water finale must be completely removed');
@@ -47,6 +47,9 @@ assert.match(style, /body\.is-ocean-dark/,
 assert.match(style,
   /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*transition:\s*none\s*!important/,
   'reduced-motion visitors must not receive theme choreography transitions');
+assert.match(style,
+  /\.particle-ocean\s*\{[^}]*background:\s*rgba\(0,\s*0,\s*0,\s*var\(--ocean-exposure\)\)/,
+  'the water field must fade toward neutral black rather than blue-washing the page');
 
 assert.match(source, /GRID_DESKTOP_X\s*=\s*320/,
   'desktop particle columns must use the approved bounded grid');
@@ -72,6 +75,8 @@ assert.match(source, /PRIMARY_SWELL_DIRECTION\s*=\s*normalize\(vec2\(0\.91,\s*0\
   'the primary swell must travel mostly laterally across the virtual sea');
 assert.match(source, /uniform\s+float\s+uAspect/,
   'the perspective camera must account for viewport aspect ratio');
+assert.match(source, /DEPTH_DISTRIBUTION\s*=\s*1\.[2-9]/,
+  'the grid must devote more rows to the compressed far horizon');
 assert.match(source, /struct\s+OceanSample[\s\S]*vec3\s+displacement[\s\S]*vec2\s+slope/,
   'the shader surface must expose three-axis displacement and analytical slope');
 assert.match(source, /worldPosition[\s\S]*viewZ[\s\S]*projected/,
@@ -97,17 +102,19 @@ assert.match(source, /uPointerEnergy/,
 assert.match(source, /MAX_WAKE_NODES\s*=\s*8/,
   'the persistent wake must have a hard eight-node limit');
 assert.match(source, /uniform\s+vec4\s+uWakeNodes\s*\[\s*MAX_WAKE_NODES\s*\]/,
-  'WebGL must receive wake position, age, and energy in a fixed uniform array');
+  'WebGL must receive wake world position, phase, and energy in a fixed uniform array');
 assert.match(source, /uniform\s+vec2\s+uWakeVelocity\s*\[\s*MAX_WAKE_NODES\s*\]/,
   'WebGL must receive fixed wake direction uniforms');
-assert.match(source, /worldPosition\.xz\s*\+=\s*wakeDisplacement\.xz/,
-  'WebGL wake response must physically displace lateral particle positions');
-assert.match(source, /worldPosition\.y\s*\+=\s*wakeDisplacement\.y/,
-  'WebGL wake response must physically displace particle height');
 assert.match(source,
-  /sampleWakeDisplacement\([^;]+\);[\s\S]{0,500}surface\.x\s*\+=\s*wakeDisplacement\.x[\s\S]{0,300}projectOceanPoint/,
-  'Canvas2D must apply the shared multi-node displacement before projection');
-assert.match(source, /TOP_OCEAN_REVEAL\s*=\s*0\.0[1-9]/,
+  /worldPosition\s*\+=\s*\(surfaceSample\.displacement\s*\+\s*wakeDisplacement\)\s*\*\s*waveScale/,
+  'WebGL must sample at the base grid point and scale surface plus wake exactly once');
+assert.match(source,
+  /prepareWakeFrame\([^;]+\);[\s\S]{0,500}for\s*\(let\s+row[\s\S]*samplePreparedWakeDisplacement/,
+  'Canvas2D must precompute wake node world data once before its particle loops');
+assert.doesNotMatch(source,
+  /for\s*\(let\s+row[\s\S]*for\s*\(let\s+column[\s\S]*mapWakePointToWorld/,
+  'Canvas2D must not repeat screen-to-world node mapping per particle');
+assert.match(source, /TOP_OCEAN_REVEAL\s*=\s*0\.\d*[1-9]/,
   'particles must have a subtle nonzero reveal at scroll zero');
 assert.match(source, /TOP_OCEAN_EXPOSURE\s*=\s*0\.0[0-9]*[1-9]/,
   'the white page must expose enough contrast for a faint top ocean');
@@ -119,12 +126,23 @@ assert.match(source,
   'Canvas2D must match the subtle top-page compositing before returning to additive light');
 assert.match(source, /addEventListener\(['"]pointermove['"]/,
   'pointer movement must drive the ocean interaction');
-assert.match(source, /addEventListener\(['"]pointerleave['"]/,
-  'the cursor wake must decay after the pointer leaves');
+assert.match(source,
+  /document\.documentElement\.addEventListener\(['"]pointerleave['"],\s*handlePointerLeave/,
+  'pointer exit must be observed on the document boundary');
+assert.match(source, /window\.addEventListener\(['"]blur['"],\s*handlePointerLeave/,
+  'window blur must also clear a stale wake emission anchor');
+assert.doesNotMatch(source,
+  /window\.addEventListener\(['"]pointerleave['"],\s*handlePointerLeave/,
+  'the unreliable window pointerleave binding must not survive');
 assert.match(source, /requestAnimationFrame/,
   'the ocean must evolve continuously');
 assert.match(source, /document\.addEventListener\(['"]visibilitychange['"]/,
   'hidden tabs must pause the animation lifecycle');
+assert.match(source,
+  /function\s+handlePageHide\s*\(event\)[\s\S]*shouldPreservePageResources\(event\)[\s\S]*renderer\?\.destroy\(\)/,
+  'pagehide must preserve renderer resources for BFCache and destroy them otherwise');
+assert.match(source, /window\.addEventListener\(['"]pageshow['"],\s*handlePageShow/,
+  'BFCache restoration must restart the ocean lifecycle');
 assert.match(source, /prefers-reduced-motion:\s*reduce/,
   'the controller must provide a static reduced-motion path');
 assert.match(source, /getContext\(['"]2d['"]\)/,
@@ -196,11 +214,29 @@ const {
   WAKE_EMIT_DISTANCE,
   WAKE_LIFETIME,
   TOP_OCEAN_REVEAL,
+  CAMERA_HEIGHT,
+  CAMERA_PITCH,
+  TAN_HALF_FOV,
+  OCEAN_FAR,
+  DEPTH_DISTRIBUTION,
   createWakeField,
   emitWakeImpulse,
   advanceWakeField,
+  resetWakeAnchor,
+  screenToOceanWorld,
+  projectWorldToScreen,
+  getOceanBasePoint,
+  getWaveScale,
   mapWakePointToWorld,
-  sampleWakeDisplacement
+  createPreparedWakeFrame,
+  prepareWakeFrame,
+  createWakeUniformData,
+  packWakeUniformData,
+  sampleWakeDisplacement,
+  samplePreparedWakeDisplacement,
+  samplePackedWakeDisplacement,
+  sampleParticleColor,
+  shouldPreservePageResources
 } = context.window.ParticleOceanModel || {};
 assert.equal(MAX_WAKE_NODES, 8,
   'the pure wake model must publish its bounded capacity');
@@ -210,15 +246,80 @@ assert.ok(WAKE_LIFETIME >= 1.4 && WAKE_LIFETIME <= 2,
   'wake nodes must have a deterministic 1.4 to 2 second lifetime');
 assert.ok(TOP_OCEAN_REVEAL >= 0.06 && TOP_OCEAN_REVEAL <= 0.12,
   'top-page particles must be discoverable without overpowering the white page');
+assert.ok(CAMERA_HEIGHT >= 3.2 && CAMERA_HEIGHT <= 4,
+  'the camera must pull back above the water for a wider composition');
+assert.ok(CAMERA_PITCH >= 0.34 && CAMERA_PITCH <= 0.44,
+  'the camera pitch must retain a low, readable horizon');
+assert.ok(TAN_HALF_FOV >= 0.85 && TAN_HALF_FOV <= 1,
+  'the wider field of view must zoom out the ocean composition');
+assert.ok(OCEAN_FAR >= 40,
+  'the ocean must extend far enough to compress points into the horizon');
+assert.ok(DEPTH_DISTRIBUTION >= 1.2,
+  'the depth curve must allocate more particles to distant water');
 for (const [name, helper] of Object.entries({
   createWakeField,
   emitWakeImpulse,
   advanceWakeField,
+  resetWakeAnchor,
+  screenToOceanWorld,
+  projectWorldToScreen,
+  getOceanBasePoint,
+  getWaveScale,
   mapWakePointToWorld,
-  sampleWakeDisplacement
+  createPreparedWakeFrame,
+  prepareWakeFrame,
+  createWakeUniformData,
+  packWakeUniformData,
+  sampleWakeDisplacement,
+  samplePreparedWakeDisplacement,
+  samplePackedWakeDisplacement,
+  sampleParticleColor,
+  shouldPreservePageResources
 })) {
   assert.equal(typeof helper, 'function', `${name} must be exported as a pure wake helper`);
 }
+
+for (const [screenX, screenY, aspect] of [
+  [0.08, 0.36, 16 / 9],
+  [0.5, 0.52, 16 / 9],
+  [0.82, 0.8, 16 / 9],
+  [0.94, 0.91, 390 / 844]
+]) {
+  const worldPoint = screenToOceanWorld(screenX, screenY, aspect);
+  assert.equal(worldPoint.valid, true,
+    `screen point ${screenX},${screenY} must intersect the ocean plane`);
+  const roundTrip = projectWorldToScreen(worldPoint.x, 0, worldPoint.z, aspect);
+  assert.ok(Math.abs(roundTrip.x - screenX) < 0.000001,
+    `screen x=${screenX} must round-trip through the pitched camera`);
+  assert.ok(Math.abs(roundTrip.y - screenY) < 0.000001,
+    `screen y=${screenY} must round-trip through the pitched camera`);
+}
+assert.equal(screenToOceanWorld(0.5, 0.05, 16 / 9).valid, false,
+  'screen rays above the camera horizon must not create ocean wake points');
+
+const paritySurface = { x: 0.3, height: -0.12, z: 0.18, slopeX: 0, slopeZ: 0, crest: 0 };
+const parityWake = { x: -0.08, y: 0.16, z: 0.05, highlight: 0.4 };
+const parityScroll = 0.55;
+const parityAspect = 16 / 9;
+const parityBase = getOceanBasePoint(0.43, 0.61, parityAspect);
+const parityScale = getWaveScale(parityScroll);
+const expectedParityProjection = projectWorldToScreen(
+  parityBase.x + (paritySurface.x + parityWake.x) * parityScale,
+  (paritySurface.height + parityWake.y) * parityScale,
+  parityBase.z + (paritySurface.z + parityWake.z) * parityScale,
+  parityAspect
+);
+const actualParityProjection = projectOceanPoint(
+  0.43,
+  0.61,
+  paritySurface,
+  parityScroll,
+  parityAspect,
+  parityWake
+);
+assert.ok(Math.abs(actualParityProjection.x - expectedParityProjection.x) < 1e-12
+    && Math.abs(actualParityProjection.y - expectedParityProjection.y) < 1e-12,
+  'shared projection must combine WebGL and Canvas2D surface plus wake before one scale');
 
 const thresholdField = createWakeField();
 assert.equal(emitWakeImpulse(thresholdField, 0.2, 0.3, 0.4, 0.1, 0.8), false,
@@ -241,6 +342,18 @@ assert.equal(emitWakeImpulse(
 ), true, 'meaningful pointer travel must emit a wake node');
 assert.equal(thresholdField.count, 1,
   'one meaningful pointer movement must create one wake node');
+
+const reentryField = createWakeField();
+emitWakeImpulse(reentryField, 0.18, 0.62, 1, 0, 1);
+emitWakeImpulse(reentryField, 0.24, 0.62, 1, 0, 1);
+const preExitCount = reentryField.count;
+resetWakeAnchor(reentryField);
+assert.equal(reentryField.hasAnchor, false,
+  'pointer exit must clear the emission anchor while preserving existing wake nodes');
+assert.equal(emitWakeImpulse(reentryField, 0.88, 0.7, 1, 0, 1), false,
+  'the first pointer sample after re-entry must establish a fresh anchor');
+assert.equal(reentryField.count, preExitCount,
+  'exit-to-reentry must not draw a synthetic trail across the viewport');
 
 const boundedField = createWakeField();
 emitWakeImpulse(boundedField, 0.1, 0.45, 0.5, 0, 0.9);
@@ -299,6 +412,53 @@ assert.equal(sampleWakeDisplacement(
   1.1,
   reusableDisplacement
 ), reusableDisplacement, 'the fallback must be able to reuse one displacement result per frame');
+
+const preparedWake = createPreparedWakeFrame();
+assert.equal(prepareWakeFrame(
+  displacementField,
+  16 / 9,
+  1.1,
+  preparedWake
+), preparedWake, 'wake precomputation must reuse its fixed frame allocation');
+assert.equal(preparedWake.nodes.length, MAX_WAKE_NODES,
+  'prepared fallback wake storage must remain capped at eight nodes');
+const packedWake = createWakeUniformData();
+assert.equal(packWakeUniformData(preparedWake, packedWake), packedWake,
+  'WebGL uniform packing must reuse its fixed typed-array allocation');
+for (const [worldX, worldZ] of [
+  [wakeWorldPoint.x, wakeWorldPoint.z],
+  [wakeWorldPoint.x + 0.4, wakeWorldPoint.z - 0.3],
+  [wakeWorldPoint.x - 0.65, wakeWorldPoint.z + 0.5]
+]) {
+  const direct = sampleWakeDisplacement(
+    worldX,
+    worldZ,
+    displacementField,
+    16 / 9,
+    1.1
+  );
+  const fallback = samplePreparedWakeDisplacement(worldX, worldZ, preparedWake);
+  const webglModel = samplePackedWakeDisplacement(worldX, worldZ, packedWake);
+  for (const key of ['x', 'y', 'z', 'highlight']) {
+    assert.ok(Math.abs(direct[key] - fallback[key]) < 1e-12,
+      `direct and prepared wake ${key} displacement must be numerically identical`);
+    assert.ok(Math.abs(webglModel[key] - fallback[key]) < 0.000001,
+      `packed WebGL and Canvas2D ${key} displacement must be numerically equivalent`);
+  }
+}
+
+const farColor = sampleParticleColor(0.01, 0.8);
+assert.ok(farColor.b > farColor.g && farColor.g > farColor.r && farColor.b < 0.25,
+  'only distant glints must resolve to a very dark cold navy');
+const nearColor = sampleParticleColor(0.75, 0.8);
+assert.ok(Math.max(nearColor.r, nearColor.g, nearColor.b)
+    - Math.min(nearColor.r, nearColor.g, nearColor.b) < 0.015,
+  'near water particles must remain neutral rather than blue-washed');
+
+assert.equal(shouldPreservePageResources({ persisted: true }), true,
+  'BFCache pagehide must preserve live rendering resources');
+assert.equal(shouldPreservePageResources({ persisted: false }), false,
+  'normal pagehide must permit final rendering cleanup');
 
 const horizonField = createWakeField();
 emitWakeImpulse(horizonField, 0.4, 0.18, 1, 0, 1);

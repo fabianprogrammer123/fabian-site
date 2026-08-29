@@ -6,18 +6,18 @@ This system applies only to the experimental `/water/` homepage variant. The pro
 
 ## Thesis
 
-The page begins as Fabian's familiar white editorial document and gradually reveals a black, luminous particle ocean beneath it. The visual is not a footer event or an illustration: it is a persistent atmospheric field whose exposure, depth, and energy are authored by scroll.
+The page begins as Fabian's familiar white editorial document and gradually reveals a neutral-black, luminous particle ocean beneath it. The visual is not a footer event or an illustration: it is a persistent atmospheric field whose exposure, depth, and energy are authored by scroll.
 
 ## Palette
 
 - Paper: `#ffffff`
 - Ink: `#222222`
-- Deep field: `#020304`
+- Deep field: `#000000`
 - Particle white: `#f3f7f5`
 - Cold glint: `#a9c5cb`
 - Muted navigation: `#8b8b8b`
 
-Color stays monochrome with a restrained cold cast. No rainbow gradients, neon accent colors, or decorative glass panels.
+The surface stays neutral monochrome. A very dark cold navy is reserved for the compressed horizon and its farthest glints; it never washes across the nearby water, reading surface, or page. No rainbow gradients, neon accent colors, or decorative glass panels.
 
 ## Typography and Layout
 
@@ -34,9 +34,11 @@ The existing monospace typography, 660px reading measure, section rhythm, and fi
 
 ## Rendering
 
-The primary renderer is a bounded WebGL2 particle grid projected through a low, pitched virtual camera. Points begin on a world-space sea, receive three-axis displacement, and are then divided by camera depth, creating natural horizon compression, foreground scale, and parallax without a large WebGPU dependency. A Canvas2D fallback shares the analytical surface sampler and camera projection so it preserves the same spatial character at lower density.
+The primary renderer is a bounded WebGL2 particle grid projected through a low, pitched virtual camera. The camera is pulled back to 3.4 world units with a 0.4-radian pitch and a wider 0.9 tangent half-FOV; the sea reaches 48 world units and uses a 1.34 depth curve to concentrate more, smaller points near the horizon. Points begin on a world-space sea, receive three-axis displacement, and are then divided by camera depth, creating strong horizon compression, a broad receding surface, restrained foreground scale, and parallax without a large WebGPU dependency. A Canvas2D fallback shares the analytical surface sampler and camera projection so it preserves the same spatial character at lower density.
 
-Wake state uses a fixed eight-slot allocation. WebGL2 receives fixed position/age/energy and direction uniform arrays; Canvas2D samples the same analytical wake model. The debug surface reports renderer, scroll progress, pointer energy, active wake count, and aggregate wake energy for browser QA.
+Wake state uses a fixed eight-slot allocation. Screen coordinates are inverted through the pitched camera onto the ocean plane before each frame; WebGL2 and Canvas2D then consume the same precomputed world positions, directions, phase, and energy. Both combine surface and wake before applying the scroll scale exactly once. The fallback performs this node derivation once per frame rather than inside every particle pair. The debug surface reports renderer, scroll progress, pointer energy, active wake count, and aggregate wake energy for browser QA.
+
+Pointer exits and window blur reset only the emission anchor, so existing wake motion can decay while re-entry cannot connect a synthetic trail across the viewport. BFCache navigation preserves GPU resources and restarts animation on restoration; normal page exit still releases renderer resources.
 
 ## Wave Geometry
 
