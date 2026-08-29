@@ -24,6 +24,14 @@
   const OCEAN_NEAR = 1.55;
   const OCEAN_FAR = 24;
   const OCEAN_OVERSCAN = 1.12;
+  const MAX_WAKE_NODES = 8;
+  const WAKE_EMIT_DISTANCE = 0.012;
+  const WAKE_LIFETIME = 1.72;
+  const WAKE_DRIFT_SPEED = 0.075;
+  const WAKE_VELOCITY_DAMPING = 2.2;
+  const TOP_OCEAN_REVEAL = 0.085;
+  const TOP_OCEAN_EXPOSURE = 0.012;
+  const TOP_BLEND_PROGRESS = 0.08;
 
   const OBLIQUE_WAVES = [
     [0.91, 0.414, 0.52, 0.31, 0.74, 0.72, 0.62],
@@ -42,6 +50,180 @@
   function smoothstep(edge0, edge1, value) {
     const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
     return t * t * (3 - 2 * t);
+  }
+
+  function clamp01(value) {
+    return Math.min(1, Math.max(0, value));
+  }
+
+  function createWakeField() {
+    const nodes = Array.from({ length: MAX_WAKE_NODES }, () => ({
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      age: 0,
+      energy: 0,
+      initialEnergy: 0,
+      active: false
+    }));
+    return {
+      nodes,
+      count: 0,
+      hasAnchor: false,
+      anchorX: 0,
+      anchorY: 0
+    };
+  }
+
+  function copyWakeNode(target, source) {
+    target.x = source.x;
+    target.y = source.y;
+    target.vx = source.vx;
+    target.vy = source.vy;
+    target.age = source.age;
+    target.energy = source.energy;
+    target.initialEnergy = source.initialEnergy;
+    target.active = source.active;
+  }
+
+  function emitWakeImpulse(field, x, y, velocityX, velocityY, energy) {
+    const nextX = clamp01(x);
+    const nextY = clamp01(y);
+    if (!field.hasAnchor) {
+      field.hasAnchor = true;
+      field.anchorX = nextX;
+      field.anchorY = nextY;
+      return false;
+    }
+
+    const travelX = nextX - field.anchorX;
+    const travelY = nextY - field.anchorY;
+    const travel = Math.hypot(travelX, travelY);
+    if (travel < WAKE_EMIT_DISTANCE) return false;
+
+    let directionX = Number.isFinite(velocityX) ? velocityX : travelX;
+    let directionY = Number.isFinite(velocityY) ? velocityY : travelY;
+    let directionLength = Math.hypot(directionX, directionY);
+    if (directionLength < 0.0001) {
+      directionX = travelX;
+      directionY = travelY;
+      directionLength = Math.max(0.0001, travel);
+    }
+
+    let targetIndex = field.count;
+    if (field.count === MAX_WAKE_NODES) {
+      for (let index = 1; index < MAX_WAKE_NODES; index += 1) {
+        copyWakeNode(field.nodes[index - 1], field.nodes[index]);
+      }
+      targetIndex = MAX_WAKE_NODES - 1;
+    } else {
+      field.count += 1;
+    }
+
+    const node = field.nodes[targetIndex];
+    node.x = nextX;
+    node.y = nextY;
+    node.vx = directionX / directionLength;
+    node.vy = directionY / directionLength;
+    node.age = 0;
+    node.energy = clamp01(energy);
+    node.initialEnergy = node.energy;
+    node.active = true;
+    field.anchorX = nextX;
+    field.anchorY = nextY;
+    return true;
+  }
+
+  function advanceWakeField(field, deltaSeconds) {
+    const elapsed = Math.max(0, Number.isFinite(deltaSeconds) ? deltaSeconds : 0);
+    let writeIndex = 0;
+    for (let readIndex = 0; readIndex < field.count; readIndex += 1) {
+      const node = field.nodes[readIndex];
+      node.age += elapsed;
+      if (node.age >= WAKE_LIFETIME) {
+        node.active = false;
+        node.energy = 0;
+        continue;
+      }
+
+      node.x = clamp01(node.x + node.vx * WAKE_DRIFT_SPEED * elapsed);
+      node.y = clamp01(node.y + node.vy * WAKE_DRIFT_SPEED * elapsed);
+      const damping = Math.exp(-WAKE_VELOCITY_DAMPING * elapsed);
+      node.vx *= damping;
+      node.vy *= damping;
+      const lifeProgress = node.age / WAKE_LIFETIME;
+      node.energy = node.initialEnergy * (1 - smoothstep(0.03, 1, lifeProgress));
+
+      if (writeIndex !== readIndex) copyWakeNode(field.nodes[writeIndex], node);
+      field.nodes[writeIndex].active = true;
+      writeIndex += 1;
+    }
+
+    for (let index = writeIndex; index < field.count; index += 1) {
+      field.nodes[index].active = false;
+      field.nodes[index].energy = 0;
+    }
+    field.count = writeIndex;
+    return field;
+  }
+
+  function mapWakePointToWorld(x, y, aspect) {
+    const rawDepth = clamp01((y - 0.18) / 0.82);
+    const depth = Math.pow(rawDepth, 0.78);
+    const z = OCEAN_FAR + (OCEAN_NEAR - OCEAN_FAR) * depth;
+    const viewDepth = Math.sin(CAMERA_PITCH) * CAMERA_HEIGHT
+      + Math.cos(CAMERA_PITCH) * z;
+    const halfWidth = viewDepth * TAN_HALF_FOV * Math.max(0.45, aspect || 1) * OCEAN_OVERSCAN;
+    return { x: (clamp01(x) - 0.5) * 2 * halfWidth, z };
+  }
+
+  function sampleWakeDisplacement(worldX, worldZ, field, aspect, time, output) {
+    const displacement = output || { x: 0, y: 0, z: 0, highlight: 0 };
+    displacement.x = 0;
+    displacement.y = 0;
+    displacement.z = 0;
+    displacement.highlight = 0;
+    const safeAspect = Math.max(0.45, aspect || 1);
+    const phaseTime = Number.isFinite(time) ? time : 0;
+    const depth = clamp01((OCEAN_FAR - worldZ) / (OCEAN_FAR - OCEAN_NEAR));
+    const depthEnvelope = smoothstep(0.02, 0.24, depth);
+    for (let index = 0; index < field.count; index += 1) {
+      const node = field.nodes[index];
+      const nodeRawDepth = clamp01((node.y - 0.18) / 0.82);
+      const nodeDepth = Math.pow(nodeRawDepth, 0.78);
+      const nodeWorldZ = OCEAN_FAR + (OCEAN_NEAR - OCEAN_FAR) * nodeDepth;
+      const nodeViewDepth = Math.sin(CAMERA_PITCH) * CAMERA_HEIGHT
+        + Math.cos(CAMERA_PITCH) * nodeWorldZ;
+      const nodeHalfWidth = nodeViewDepth * TAN_HALF_FOV * safeAspect * OCEAN_OVERSCAN;
+      const nodeWorldX = (node.x - 0.5) * 2 * nodeHalfWidth;
+      const deltaX = (worldX - nodeWorldX) * 0.34;
+      const deltaZ = (worldZ - nodeWorldZ) * 0.52;
+      const distance = Math.hypot(deltaX, deltaZ);
+      const envelope = Math.exp(-distance * 1.42) * depthEnvelope * node.energy;
+      if (envelope < 0.0001) continue;
+
+      const radialScale = distance > 0.0001 ? 1 / distance : 0;
+      const directionLength = Math.max(0.0001, Math.hypot(node.vx * safeAspect, node.vy));
+      const directionX = node.vx * safeAspect / directionLength;
+      const directionZ = -node.vy / directionLength;
+      const ripple = Math.sin(distance * 7.8 - node.age * 5.4 - phaseTime * 0.55);
+      displacement.x += (directionX * 0.34
+        + deltaX * radialScale * (0.12 + ripple * 0.06)) * envelope;
+      displacement.z += (directionZ * 0.34
+        + deltaZ * radialScale * (0.12 + ripple * 0.06)) * envelope;
+      displacement.y += (0.11 + ripple * 0.32) * envelope;
+      displacement.highlight += envelope;
+    }
+    return displacement;
+  }
+
+  function getWakeEnergy(field) {
+    let energy = 0;
+    for (let index = 0; index < field.count; index += 1) {
+      energy += field.nodes[index].energy;
+    }
+    return energy;
   }
 
   function choppyWaveProfile(phase) {
@@ -121,7 +303,21 @@
     };
   }
 
-  window.ParticleOceanModel = { normalizeScroll, sampleObliqueSurface, projectOceanPoint };
+  window.ParticleOceanModel = {
+    MAX_WAKE_NODES,
+    WAKE_EMIT_DISTANCE,
+    WAKE_LIFETIME,
+    TOP_OCEAN_REVEAL,
+    normalizeScroll,
+    sampleObliqueSurface,
+    projectOceanPoint,
+    createWakeField,
+    emitWakeImpulse,
+    advanceWakeField,
+    mapWakePointToWorld,
+    sampleWakeDisplacement,
+    getWakeEnergy
+  };
 
   const initialCanvas = document.getElementById('particle-ocean');
   if (!initialCanvas) return;
@@ -150,6 +346,7 @@
     lastMoveTime: performance.now(),
     active: false
   };
+  const wakeField = createWakeField();
 
   const vertexShaderSource = `#version 300 es
     precision highp float;
@@ -157,6 +354,10 @@
     uniform vec2 uGrid;
     uniform vec2 uPointer;
     uniform float uPointerEnergy;
+    const int MAX_WAKE_NODES = 8;
+    uniform vec4 uWakeNodes[MAX_WAKE_NODES];
+    uniform vec2 uWakeVelocity[MAX_WAKE_NODES];
+    uniform int uWakeCount;
     uniform float uTime;
     uniform float uScroll;
     uniform float uPixelRatio;
@@ -258,24 +459,37 @@
       vec3 worldPosition = vec3((uv.x - 0.5) * 2.0 * halfWidth, 0.0, worldDepth);
       OceanSample surfaceSample = oceanSurface(worldPosition.xz);
 
-      float pointerRawDepth = clamp((uPointer.y - 0.18) / 0.82, 0.0, 1.0);
-      float pointerDepth = pow(pointerRawDepth, 0.78);
-      float pointerWorldDepth = mix(OCEAN_FAR, OCEAN_NEAR, pointerDepth);
-      float pointerViewDepth = sinPitch * CAMERA_HEIGHT + cosPitch * pointerWorldDepth;
-      float pointerHalfWidth = pointerViewDepth * TAN_HALF_FOV * uAspect * OCEAN_OVERSCAN;
-      float pointerWorldX = (uPointer.x - 0.5) * 2.0 * pointerHalfWidth;
-      vec2 wakeDelta = vec2(
-        (worldPosition.x - pointerWorldX) * 0.34,
-        (worldPosition.z - pointerWorldDepth) * 0.52
-      );
-      float wakeDistance = length(wakeDelta);
-      float wakeEnvelope = exp(-wakeDistance * 1.42) * smoothstep(0.02, 0.24, depth);
-      float wakeRing = sin(wakeDistance * 7.8 - uTime * 4.2);
-      float wake = wakeRing * wakeEnvelope * uPointerEnergy;
-
       float waveScale = mix(0.72, 1.14, uScroll);
       worldPosition += surfaceSample.displacement * waveScale;
-      worldPosition.y += wake * 0.46;
+      vec3 wakeDisplacement = vec3(0.0);
+      float wakeHighlight = 0.0;
+      for (int wakeIndex = 0; wakeIndex < MAX_WAKE_NODES; wakeIndex += 1) {
+        if (wakeIndex >= uWakeCount) break;
+        vec4 wakeNode = uWakeNodes[wakeIndex];
+        float wakeRawDepth = clamp((wakeNode.y - 0.18) / 0.82, 0.0, 1.0);
+        float wakeDepth = pow(wakeRawDepth, 0.78);
+        float wakeWorldDepth = mix(OCEAN_FAR, OCEAN_NEAR, wakeDepth);
+        float wakeViewDepth = sinPitch * CAMERA_HEIGHT + cosPitch * wakeWorldDepth;
+        float wakeHalfWidth = wakeViewDepth * TAN_HALF_FOV * uAspect * OCEAN_OVERSCAN;
+        float wakeWorldX = (wakeNode.x - 0.5) * 2.0 * wakeHalfWidth;
+        vec2 wakeDelta = vec2(
+          (worldPosition.x - wakeWorldX) * 0.34,
+          (worldPosition.z - wakeWorldDepth) * 0.52
+        );
+        float wakeDistance = length(wakeDelta);
+        float wakeEnvelope = exp(-wakeDistance * 1.42)
+          * smoothstep(0.02, 0.24, depth) * wakeNode.w;
+        vec2 wakeRadial = wakeDistance > 0.0001 ? wakeDelta / wakeDistance : vec2(0.0);
+        vec2 wakeVelocity = uWakeVelocity[wakeIndex];
+        vec2 wakeDirection = normalize(vec2(wakeVelocity.x * uAspect, -wakeVelocity.y));
+        float wakeRing = sin(wakeDistance * 7.8 - wakeNode.z * 5.4 - uTime * 0.55);
+        wakeDisplacement.xz += (wakeDirection * 0.34
+          + wakeRadial * (0.12 + wakeRing * 0.06)) * wakeEnvelope;
+        wakeDisplacement.y += (0.11 + wakeRing * 0.32) * wakeEnvelope;
+        wakeHighlight += wakeEnvelope;
+      }
+      worldPosition.xz += wakeDisplacement.xz;
+      worldPosition.y += wakeDisplacement.y;
 
       vec3 relative = worldPosition - vec3(0.0, CAMERA_HEIGHT, 0.0);
       float viewY = cosPitch * relative.y + sinPitch * relative.z;
@@ -299,21 +513,22 @@
         + sin(worldPosition.x * 1.71 - worldPosition.z * 0.11 - uTime * 0.13) * 0.32);
       float crest = smoothstep(0.035, 0.30, surfaceSample.crest) * mix(0.56, 1.0, crestBreakup);
       crest += slopeLight * 0.34 + grazingLight * crest * 0.18;
-      crest += wakeEnvelope * uPointerEnergy * 0.38;
+      crest += wakeHighlight * (0.10 + uPointerEnergy * 0.025);
       crest = clamp(crest, 0.0, 1.0);
-      float reveal = mix(0.012, 1.0, smoothstep(0.02, 0.50, uScroll));
+      float reveal = mix(0.085, 1.0, smoothstep(0.02, 0.50, uScroll));
       float horizonFade = smoothstep(0.0, 0.055, uv.y);
+      float horizonTrace = (1.0 - smoothstep(0.0, 0.12, uv.y)) * crest * 0.05;
       float readingQuiet = mix(0.34, 1.0, smoothstep(0.24, 0.76, abs(projected.x)));
       float depthLight = mix(0.42, 1.0, smoothstep(0.02, 0.88, depth));
       float faceLight = mix(0.08, 0.31, depth) * mix(0.68, 1.0, surfaceNormal.y);
       float perspectiveScale = clamp(1.0 / viewZ, 0.03, 0.72);
 
       vAlpha = reveal * horizonFade * readingQuiet * depthLight
-        * (0.012 + faceLight + crest * 0.76);
+        * (0.012 + faceLight + crest * 0.76) + horizonTrace * readingQuiet;
       vCrest = crest;
       vDepth = depth;
       gl_PointSize = min(6.2, (0.44 + perspectiveScale * 2.05 + crest * 1.58
-        + wakeEnvelope * uPointerEnergy * 0.62) * uPixelRatio);
+        + wakeHighlight * 0.18) * uPixelRatio);
       gl_Position = vec4(projected, 0.0, 1.0);
     }
   `;
@@ -371,10 +586,15 @@
       }
 
       this.vertexArray = gl.createVertexArray();
+      this.wakeNodeUniformData = new Float32Array(MAX_WAKE_NODES * 4);
+      this.wakeVelocityUniformData = new Float32Array(MAX_WAKE_NODES * 2);
       this.uniforms = {
         grid: gl.getUniformLocation(this.program, 'uGrid'),
         pointer: gl.getUniformLocation(this.program, 'uPointer'),
         pointerEnergy: gl.getUniformLocation(this.program, 'uPointerEnergy'),
+        wakeNodes: gl.getUniformLocation(this.program, 'uWakeNodes[0]'),
+        wakeVelocity: gl.getUniformLocation(this.program, 'uWakeVelocity[0]'),
+        wakeCount: gl.getUniformLocation(this.program, 'uWakeCount'),
         time: gl.getUniformLocation(this.program, 'uTime'),
         scroll: gl.getUniformLocation(this.program, 'uScroll'),
         pixelRatio: gl.getUniformLocation(this.program, 'uPixelRatio'),
@@ -416,14 +636,35 @@
       this.gl.viewport(0, 0, width, height);
     }
 
-    render(time, scroll, cursor) {
+    render(time, scroll, cursor, wake) {
       const gl = this.gl;
+      if (scroll < TOP_BLEND_PROGRESS) {
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      } else {
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      }
+      this.wakeNodeUniformData.fill(0);
+      this.wakeVelocityUniformData.fill(0);
+      for (let index = 0; index < wake.count; index += 1) {
+        const node = wake.nodes[index];
+        const nodeOffset = index * 4;
+        const velocityOffset = index * 2;
+        this.wakeNodeUniformData[nodeOffset] = node.x;
+        this.wakeNodeUniformData[nodeOffset + 1] = node.y;
+        this.wakeNodeUniformData[nodeOffset + 2] = node.age;
+        this.wakeNodeUniformData[nodeOffset + 3] = node.energy;
+        this.wakeVelocityUniformData[velocityOffset] = node.vx;
+        this.wakeVelocityUniformData[velocityOffset + 1] = node.vy;
+      }
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(this.program);
       gl.bindVertexArray(this.vertexArray);
       gl.uniform2f(this.uniforms.grid, this.gridX, this.gridY);
       gl.uniform2f(this.uniforms.pointer, cursor.x, cursor.y);
       gl.uniform1f(this.uniforms.pointerEnergy, cursor.energy);
+      gl.uniform4fv(this.uniforms.wakeNodes, this.wakeNodeUniformData);
+      gl.uniform2fv(this.uniforms.wakeVelocity, this.wakeVelocityUniformData);
+      gl.uniform1i(this.uniforms.wakeCount, wake.count);
       gl.uniform1f(this.uniforms.time, time);
       gl.uniform1f(this.uniforms.scroll, scroll);
       gl.uniform1f(this.uniforms.pixelRatio, this.pixelRatio);
@@ -443,6 +684,7 @@
       this.canvas = targetCanvas;
       this.context = targetCanvas.getContext('2d');
       if (!this.context) throw new Error('Canvas2D unavailable');
+      this.wakeDisplacement = { x: 0, y: 0, z: 0, highlight: 0 };
       this.resize();
     }
 
@@ -455,24 +697,18 @@
       this.context.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
     }
 
-    render(time, scroll, cursor) {
+    render(time, scroll, cursor, wake) {
       const context = this.context;
       const width = this.width;
       const height = this.height;
       const mobile = width <= MOBILE_BREAKPOINT;
       const columns = mobile ? 92 : 148;
       const rows = mobile ? 58 : 82;
-      const reveal = 0.012 + smoothstep(0.02, 0.5, scroll) * 0.988;
+      const reveal = TOP_OCEAN_REVEAL
+        + smoothstep(0.02, 0.5, scroll) * (1 - TOP_OCEAN_REVEAL);
       const aspect = width / Math.max(1, height);
-      const pointerRawDepth = Math.min(1, Math.max(0, (cursor.y - 0.18) / 0.82));
-      const pointerDepth = Math.pow(pointerRawDepth, 0.78);
-      const pointerWorldDepth = OCEAN_FAR + (OCEAN_NEAR - OCEAN_FAR) * pointerDepth;
-      const pointerBaseViewDepth = Math.sin(CAMERA_PITCH) * CAMERA_HEIGHT
-        + Math.cos(CAMERA_PITCH) * pointerWorldDepth;
-      const pointerHalfWidth = pointerBaseViewDepth * TAN_HALF_FOV * aspect * OCEAN_OVERSCAN;
-      const pointerWorldX = (cursor.x - 0.5) * 2 * pointerHalfWidth;
       context.clearRect(0, 0, width, height);
-      context.globalCompositeOperation = 'lighter';
+      context.globalCompositeOperation = scroll < TOP_BLEND_PROGRESS ? 'source-over' : 'lighter';
 
       for (let row = 0; row < rows; row += 1) {
         const rawDepth = row / Math.max(1, rows - 1);
@@ -486,13 +722,17 @@
           const u = column / Math.max(1, columns - 1);
           const worldX = (u - 0.5) * 2 * halfWidth;
           const surface = sampleObliqueSurface(worldX, worldDepth, time);
-          const wakeDistance = Math.hypot(
-            (worldX - pointerWorldX) * 0.34,
-            (worldDepth - pointerWorldDepth) * 0.52
+          const wakeDisplacement = sampleWakeDisplacement(
+            worldX,
+            worldDepth,
+            wake,
+            aspect,
+            time,
+            this.wakeDisplacement
           );
-          const wakeEnvelope = Math.exp(-wakeDistance * 1.42) * smoothstep(0.02, 0.24, depth);
-          const wake = Math.sin(wakeDistance * 7.8 - time * 4.2) * wakeEnvelope * cursor.energy;
-          surface.height += wake * 0.46;
+          surface.x += wakeDisplacement.x;
+          surface.height += wakeDisplacement.y;
+          surface.z += wakeDisplacement.z;
           const projected = projectOceanPoint(u, rawDepth, surface, scroll, aspect);
           const x = projected.x * width;
           const y = projected.y * height;
@@ -502,13 +742,14 @@
           const slopeLight = Math.pow(Math.max(0,
             (surface.slopeX * 0.34 + 0.86 + surface.slopeZ * 0.38) / normalLength), 5);
           const crest = Math.min(1, smoothstep(0.035, 0.3, surface.crest)
-            + slopeLight * 0.34 + wakeEnvelope * cursor.energy * 0.38);
+            + slopeLight * 0.34 + wakeDisplacement.highlight * 0.125);
           const readingQuiet = 0.34
             + smoothstep(0.24, 0.76, Math.abs(projected.x * 2 - 1)) * 0.66;
           const depthLight = 0.42 + smoothstep(0.02, 0.88, depth) * 0.58;
           const faceLight = (0.08 + depth * 0.23) * (0.68 + 0.32 / normalLength);
-          const alpha = Math.min(0.92,
-            reveal * readingQuiet * depthLight * (0.012 + faceLight + crest * 0.76));
+          const horizonTrace = (1 - smoothstep(0, 0.12, rawDepth)) * crest * 0.05;
+          const alpha = Math.min(0.92, reveal * readingQuiet * depthLight
+            * (0.012 + faceLight + crest * 0.76) + horizonTrace * readingQuiet);
           const perspectiveSize = smoothstep(0.035, 0.42, projected.perspectiveScale);
           const radius = 0.22 + perspectiveSize * 0.56 + crest * 0.46;
           context.beginPath();
@@ -562,7 +803,8 @@
   }
 
   function setExposure(progress) {
-    const exposure = smoothstep(0.10, 0.92, progress) * 0.975;
+    const exposure = TOP_OCEAN_EXPOSURE
+      + smoothstep(0.10, 0.92, progress) * (0.975 - TOP_OCEAN_EXPOSURE);
     canvas.style.setProperty('--ocean-exposure', exposure.toFixed(3));
 
     if (!darkTheme && exposure > 0.56) {
@@ -576,7 +818,7 @@
 
   function render(time) {
     setExposure(displayScroll);
-    if (renderer) renderer.render(time * 0.00078, displayScroll, pointer);
+    if (renderer) renderer.render(time * 0.00078, displayScroll, pointer, wakeField);
   }
 
   function tick(now) {
@@ -594,6 +836,7 @@
     if (now - pointer.lastMoveTime > 100) pointer.targetEnergy *= Math.exp(-deltaSeconds * 2.8);
     pointer.energy += (pointer.targetEnergy - pointer.energy) * energyEase;
     if (!pointer.active && pointer.energy < 0.001) pointer.energy = 0;
+    advanceWakeField(wakeField, deltaSeconds);
 
     render(now);
     frameRequest = requestAnimationFrame(tick);
@@ -603,8 +846,9 @@
     staticFrameRequest = 0;
     displayScroll = targetScroll;
     pointer.energy = 0;
+    wakeField.count = 0;
     setExposure(displayScroll);
-    if (renderer) renderer.render(7.75, displayScroll, pointer);
+    if (renderer) renderer.render(7.75, displayScroll, pointer, wakeField);
   }
 
   function scheduleReducedMotionFrame() {
@@ -637,10 +881,19 @@
     const elapsed = Math.max(16, now - pointer.lastMoveTime);
     const distance = Math.hypot(nextX - pointer.lastX, nextY - pointer.lastY);
     const speed = distance * 1000 / elapsed;
+    const directionLength = Math.max(0.0001, distance);
 
     pointer.targetX = nextX;
     pointer.targetY = nextY;
     pointer.targetEnergy = Math.min(1, 0.18 + speed * 2.9);
+    emitWakeImpulse(
+      wakeField,
+      nextX,
+      nextY,
+      (nextX - pointer.lastX) / directionLength,
+      (nextY - pointer.lastY) / directionLength,
+      pointer.targetEnergy
+    );
     pointer.lastX = nextX;
     pointer.lastY = nextY;
     pointer.lastMoveTime = now;
@@ -650,6 +903,7 @@
   function handlePointerLeave() {
     pointer.active = false;
     pointer.targetEnergy = 0;
+    wakeField.hasAnchor = false;
   }
 
   function handleResize() {
@@ -665,6 +919,8 @@
     staticFrameRequest = 0;
     pointer.targetEnergy = 0;
     pointer.energy = 0;
+    wakeField.count = 0;
+    wakeField.hasAnchor = false;
     startAnimation();
   }
 
@@ -692,10 +948,23 @@
     renderer?.destroy();
   }, { once: true });
 
+  const getRendererName = () => renderer instanceof WebGLParticleOcean
+    ? 'webgl2'
+    : renderer ? 'canvas2d' : 'none';
+
   window.ParticleOceanDebug = {
-    getRenderer: () => renderer instanceof WebGLParticleOcean ? 'webgl2' : renderer ? 'canvas2d' : 'none',
+    getState: () => ({
+      renderer: getRendererName(),
+      scroll: displayScroll,
+      pointerEnergy: pointer.energy,
+      wakeCount: wakeField.count,
+      wakeEnergy: getWakeEnergy(wakeField)
+    }),
+    getRenderer: getRendererName,
     getScrollProgress: () => displayScroll,
-    getPointerEnergy: () => pointer.energy
+    getPointerEnergy: () => pointer.energy,
+    getWakeCount: () => wakeField.count,
+    getWakeEnergy: () => getWakeEnergy(wakeField)
   };
 
   startAnimation();

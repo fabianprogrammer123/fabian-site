@@ -32,8 +32,8 @@ assert.match(oceanPage,
   'the experimental route needs one decorative particle-ocean canvas');
 assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js(?:\?v=\d+)?"/,
   'the route must load the focused particle-ocean controller');
-assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=3"/,
-  'the route must cache-bust the oblique 3D ocean revision');
+assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=4"/,
+  'the route must cache-bust the persistent wake revision');
 assert.doesNotMatch(oceanPage,
   /water-finale|water-screen|water-spray|water-nozzle|water-sprayer|spraying|draining/,
   'the discarded character and rising-water finale must be completely removed');
@@ -94,6 +94,29 @@ assert.doesNotMatch(source, /foam|mist|sprayTexture/,
   'the refinement must not add visual layers outside the dotted surface');
 assert.match(source, /uPointerEnergy/,
   'the shader must receive cursor energy for a localized wake');
+assert.match(source, /MAX_WAKE_NODES\s*=\s*8/,
+  'the persistent wake must have a hard eight-node limit');
+assert.match(source, /uniform\s+vec4\s+uWakeNodes\s*\[\s*MAX_WAKE_NODES\s*\]/,
+  'WebGL must receive wake position, age, and energy in a fixed uniform array');
+assert.match(source, /uniform\s+vec2\s+uWakeVelocity\s*\[\s*MAX_WAKE_NODES\s*\]/,
+  'WebGL must receive fixed wake direction uniforms');
+assert.match(source, /worldPosition\.xz\s*\+=\s*wakeDisplacement\.xz/,
+  'WebGL wake response must physically displace lateral particle positions');
+assert.match(source, /worldPosition\.y\s*\+=\s*wakeDisplacement\.y/,
+  'WebGL wake response must physically displace particle height');
+assert.match(source,
+  /sampleWakeDisplacement\([^;]+\);[\s\S]{0,500}surface\.x\s*\+=\s*wakeDisplacement\.x[\s\S]{0,300}projectOceanPoint/,
+  'Canvas2D must apply the shared multi-node displacement before projection');
+assert.match(source, /TOP_OCEAN_REVEAL\s*=\s*0\.0[1-9]/,
+  'particles must have a subtle nonzero reveal at scroll zero');
+assert.match(source, /TOP_OCEAN_EXPOSURE\s*=\s*0\.0[0-9]*[1-9]/,
+  'the white page must expose enough contrast for a faint top ocean');
+assert.match(source,
+  /scroll\s*<\s*TOP_BLEND_PROGRESS[\s\S]{0,180}blendFunc\(gl\.SRC_ALPHA,\s*gl\.ONE_MINUS_SRC_ALPHA\)/,
+  'WebGL must use neutral alpha near the top so silver particles remain visible on white');
+assert.match(source,
+  /globalCompositeOperation\s*=\s*scroll\s*<\s*TOP_BLEND_PROGRESS\s*\?\s*['"]source-over['"]\s*:\s*['"]lighter['"]/,
+  'Canvas2D must match the subtle top-page compositing before returning to additive light');
 assert.match(source, /addEventListener\(['"]pointermove['"]/,
   'pointer movement must drive the ocean interaction');
 assert.match(source, /addEventListener\(['"]pointerleave['"]/,
@@ -167,5 +190,135 @@ const narrowLeft = projectOceanPoint(0, 0.55, flatSurface, 1, 390 / 844);
 const narrowRight = projectOceanPoint(1, 0.55, flatSurface, 1, 390 / 844);
 assert.ok(narrowLeft.x < 0 && narrowRight.x > 1,
   'camera overscan must cover both edges of a narrow viewport');
+
+const {
+  MAX_WAKE_NODES,
+  WAKE_EMIT_DISTANCE,
+  WAKE_LIFETIME,
+  TOP_OCEAN_REVEAL,
+  createWakeField,
+  emitWakeImpulse,
+  advanceWakeField,
+  mapWakePointToWorld,
+  sampleWakeDisplacement
+} = context.window.ParticleOceanModel || {};
+assert.equal(MAX_WAKE_NODES, 8,
+  'the pure wake model must publish its bounded capacity');
+assert.ok(WAKE_EMIT_DISTANCE > 0 && WAKE_EMIT_DISTANCE < 0.05,
+  'the wake model must publish a meaningful normalized emission threshold');
+assert.ok(WAKE_LIFETIME >= 1.4 && WAKE_LIFETIME <= 2,
+  'wake nodes must have a deterministic 1.4 to 2 second lifetime');
+assert.ok(TOP_OCEAN_REVEAL >= 0.06 && TOP_OCEAN_REVEAL <= 0.12,
+  'top-page particles must be discoverable without overpowering the white page');
+for (const [name, helper] of Object.entries({
+  createWakeField,
+  emitWakeImpulse,
+  advanceWakeField,
+  mapWakePointToWorld,
+  sampleWakeDisplacement
+})) {
+  assert.equal(typeof helper, 'function', `${name} must be exported as a pure wake helper`);
+}
+
+const thresholdField = createWakeField();
+assert.equal(emitWakeImpulse(thresholdField, 0.2, 0.3, 0.4, 0.1, 0.8), false,
+  'the first pointer sample must establish an emission anchor without stamping a node');
+assert.equal(emitWakeImpulse(
+  thresholdField,
+  0.2 + WAKE_EMIT_DISTANCE * 0.5,
+  0.3,
+  0.4,
+  0.1,
+  0.8
+), false, 'sub-threshold pointer travel must not emit a wake node');
+assert.equal(emitWakeImpulse(
+  thresholdField,
+  0.2 + WAKE_EMIT_DISTANCE * 1.2,
+  0.3,
+  0.4,
+  0.1,
+  0.8
+), true, 'meaningful pointer travel must emit a wake node');
+assert.equal(thresholdField.count, 1,
+  'one meaningful pointer movement must create one wake node');
+
+const boundedField = createWakeField();
+emitWakeImpulse(boundedField, 0.1, 0.45, 0.5, 0, 0.9);
+for (let index = 1; index <= 20; index += 1) {
+  emitWakeImpulse(boundedField, 0.1 + index * 0.03, 0.45, 0.5, 0, 0.9);
+}
+assert.equal(boundedField.count, MAX_WAKE_NODES,
+  'wake history must remain bounded after repeated movement');
+assert.equal(boundedField.nodes.length, MAX_WAKE_NODES,
+  'wake storage must remain a fixed allocation');
+
+const driftingField = createWakeField();
+emitWakeImpulse(driftingField, 0.3, 0.42, 0.5, 0.2, 0.9);
+emitWakeImpulse(driftingField, 0.36, 0.45, 0.5, 0.2, 0.9);
+const driftingNode = driftingField.nodes[0];
+const startX = driftingNode.x;
+const startY = driftingNode.y;
+const startEnergy = driftingNode.energy;
+advanceWakeField(driftingField, 0.25);
+assert.equal(driftingNode.age, 0.25,
+  'wake advancement must track node age in seconds');
+assert.ok(driftingNode.x > startX && driftingNode.y > startY,
+  'wake nodes must drift in their stored velocity direction');
+assert.ok(driftingNode.energy > 0 && driftingNode.energy < startEnergy,
+  'wake energy must decay smoothly while motion lingers');
+advanceWakeField(driftingField, WAKE_LIFETIME);
+assert.equal(driftingField.count, 0,
+  'wake nodes must expire deterministically at the published lifetime');
+
+const displacementField = createWakeField();
+emitWakeImpulse(displacementField, 0.42, 0.58, 0.7, -0.25, 1);
+emitWakeImpulse(displacementField, 0.48, 0.56, 0.7, -0.25, 1);
+advanceWakeField(displacementField, 0.18);
+const wakeWorldPoint = mapWakePointToWorld(
+  displacementField.nodes[0].x,
+  displacementField.nodes[0].y,
+  16 / 9
+);
+const wakeDisplacement = sampleWakeDisplacement(
+  wakeWorldPoint.x,
+  wakeWorldPoint.z,
+  displacementField,
+  16 / 9,
+  1.1
+);
+assert.ok(Math.abs(wakeDisplacement.x) + Math.abs(wakeDisplacement.z) > 0.001,
+  'a wake node must produce lateral world-space displacement');
+assert.ok(Math.abs(wakeDisplacement.y) > 0.001,
+  'a wake node must produce vertical world-space ripple displacement');
+const reusableDisplacement = { x: 99, y: 99, z: 99, highlight: 99 };
+assert.equal(sampleWakeDisplacement(
+  wakeWorldPoint.x,
+  wakeWorldPoint.z,
+  displacementField,
+  16 / 9,
+  1.1,
+  reusableDisplacement
+), reusableDisplacement, 'the fallback must be able to reuse one displacement result per frame');
+
+const horizonField = createWakeField();
+emitWakeImpulse(horizonField, 0.4, 0.18, 1, 0, 1);
+emitWakeImpulse(horizonField, 0.46, 0.18, 1, 0, 1);
+const horizonNodeWorld = mapWakePointToWorld(0.46, 0.18, 16 / 9);
+const horizonDisplacement = sampleWakeDisplacement(
+  horizonNodeWorld.x,
+  horizonNodeWorld.z,
+  horizonField,
+  16 / 9,
+  0
+);
+assert.ok(
+  Math.abs(horizonDisplacement.x) + Math.abs(horizonDisplacement.y)
+    + Math.abs(horizonDisplacement.z) < 0.000001,
+  'the shared wake sampler must match the shader horizon depth envelope'
+);
+
+assert.match(source,
+  /ParticleOceanDebug\s*=\s*\{[\s\S]*getState:[\s\S]*renderer:[\s\S]*scroll:[\s\S]*pointerEnergy:[\s\S]*wakeCount:[\s\S]*wakeEnergy:/,
+  'the debug API must expose renderer, scroll, pointer energy, wake count, and wake energy together');
 
 console.log('PASS: particle ocean route and interaction contracts');

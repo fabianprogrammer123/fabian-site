@@ -27,12 +27,16 @@ The existing monospace typography, 660px reading measure, section rhythm, and fi
 
 - The ocean evolves continuously through broad lateral and diagonal cross-swells whose phase speeds oppose one another.
 - Scroll progress controls exposure, particle prominence, wave amplitude, and horizon height.
-- Pointer movement produces a localized world-space wake with eased position and decaying energy.
-- Motion pauses with the document and renders a calm static frame for reduced-motion visitors.
+- The first viewport retains a near-white field while exposing faint silver particles and a broken distant crest trace.
+- Meaningful fine-pointer travel emits up to eight world-space wake nodes. Each node carries direction and energy, drifts with damping, and decays over 1.72 seconds.
+- Wake nodes push particles laterally, separate them radially, and lift them in a phase-advancing ripple. Both WebGL2 and Canvas2D apply this displacement before projection, so the surface keeps moving after the pointer stops instead of behaving like a glow.
+- Coarse pointers do not emit a wake. Motion pauses with the document and renders a calm static top ocean for reduced-motion visitors, with all pointer disturbance disabled.
 
 ## Rendering
 
 The primary renderer is a bounded WebGL2 particle grid projected through a low, pitched virtual camera. Points begin on a world-space sea, receive three-axis displacement, and are then divided by camera depth, creating natural horizon compression, foreground scale, and parallax without a large WebGPU dependency. A Canvas2D fallback shares the analytical surface sampler and camera projection so it preserves the same spatial character at lower density.
+
+Wake state uses a fixed eight-slot allocation. WebGL2 receives fixed position/age/energy and direction uniform arrays; Canvas2D samples the same analytical wake model. The debug surface reports renderer, scroll progress, pointer energy, active wake count, and aggregate wake energy for browser QA.
 
 ## Wave Geometry
 
