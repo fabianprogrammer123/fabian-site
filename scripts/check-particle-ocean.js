@@ -64,14 +64,26 @@ assert.match(source, /drawArrays\([^\n]*POINTS/,
   'the ocean surface must render as a point field');
 assert.match(source, /vec4\s+choppyWave\s*\(/,
   'the shader must shape each swell with an asymmetric choppy profile');
-assert.match(source, /DOMINANT_WAVE_DIRECTION/,
-  'the surface must establish a dominant direction for connected ocean ridges');
+assert.doesNotMatch(source, /DOMINANT_WAVE_DIRECTION/,
+  'the former depth-facing dominant direction must not survive the 3D refinement');
+assert.match(source, /PRIMARY_SWELL_DIRECTION\s*=\s*normalize\(vec2\(0\.91,\s*0\.414\)\)/,
+  'the primary swell must travel mostly laterally across the virtual sea');
+assert.match(source, /uniform\s+float\s+uAspect/,
+  'the perspective camera must account for viewport aspect ratio');
+assert.match(source, /struct\s+OceanSample[\s\S]*vec3\s+displacement[\s\S]*vec2\s+slope/,
+  'the shader surface must expose three-axis displacement and analytical slope');
+assert.match(source, /worldPosition[\s\S]*viewZ[\s\S]*projected/,
+  'the particle grid must be projected from world space through camera depth');
+assert.match(source, /surfaceSample\.slope/,
+  'particle light must respond to surface slope');
 assert.match(source, /phaseWarp/,
   'large wave groups must vary instead of repeating at a fixed interval');
 assert.match(source, /horizontalDisplacement/,
   'the point field must lean with its waves to preserve three-dimensional volume');
-assert.match(source, /function\s+sampleChoppySurface\s*\(/,
-  'the Canvas2D fallback must preserve the approved wave profile');
+assert.match(source, /function\s+sampleObliqueSurface\s*\(/,
+  'the shared fallback model must sample the oblique wave family');
+assert.match(source, /function\s+projectOceanPoint\s*\(/,
+  'the fallback must share the world-space camera projection');
 assert.doesNotMatch(source, /foam|mist|sprayTexture/,
   'the refinement must not add visual layers outside the dotted surface');
 assert.match(source, /uPointerEnergy/,
@@ -110,5 +122,34 @@ assert.equal(normalizeScroll(-20, 2000, 1000), 0,
   'negative overscroll must clamp to zero');
 assert.equal(normalizeScroll(100, 800, 1000), 0,
   'short documents must not divide by an invalid scroll range');
+
+const sampleObliqueSurface = context.window.ParticleOceanModel?.sampleObliqueSurface;
+const projectOceanPoint = context.window.ParticleOceanModel?.projectOceanPoint;
+assert.equal(typeof sampleObliqueSurface, 'function',
+  'the oblique surface sampler must be published as a pure model');
+assert.equal(typeof projectOceanPoint, 'function',
+  'the perspective projector must be published as a pure model');
+
+const sample = sampleObliqueSurface(2.4, 7.1, 1.25);
+for (const key of ['x', 'height', 'z', 'slopeX', 'slopeZ', 'crest']) {
+  assert.ok(Number.isFinite(sample[key]), `${key} must be finite`);
+}
+assert.notEqual(sample.x, 0,
+  'the world-space surface must include horizontal x displacement');
+assert.notEqual(sample.z, 0,
+  'the world-space surface must include horizontal depth displacement');
+
+const farProjection = projectOceanPoint(0.5, 0.05, sample, 1, 16 / 9);
+const nearProjection = projectOceanPoint(0.5, 0.95, sample, 1, 16 / 9);
+for (const projection of [farProjection, nearProjection]) {
+  assert.ok(Number.isFinite(projection.x), 'projected x must be finite');
+  assert.ok(Number.isFinite(projection.y), 'projected y must be finite');
+  assert.ok(Number.isFinite(projection.perspectiveScale),
+    'perspective scale must be finite');
+}
+assert.ok(farProjection.y < nearProjection.y,
+  'perspective must place distant water above nearby water');
+assert.ok(farProjection.perspectiveScale < nearProjection.perspectiveScale,
+  'nearby particles must receive stronger perspective scale');
 
 console.log('PASS: particle ocean route and interaction contracts');
