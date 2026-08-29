@@ -303,7 +303,7 @@
       crest = clamp(crest, 0.0, 1.0);
       float reveal = mix(0.012, 1.0, smoothstep(0.02, 0.50, uScroll));
       float horizonFade = smoothstep(0.0, 0.055, uv.y);
-      float readingQuiet = mix(0.62, 1.0, smoothstep(0.20, 0.78, abs(projected.x)));
+      float readingQuiet = mix(0.34, 1.0, smoothstep(0.24, 0.76, abs(projected.x)));
       float depthLight = mix(0.42, 1.0, smoothstep(0.02, 0.88, depth));
       float faceLight = mix(0.08, 0.31, depth) * mix(0.68, 1.0, surfaceNormal.y);
       float perspectiveScale = clamp(1.0 / viewZ, 0.03, 0.72);
@@ -503,8 +503,8 @@
             (surface.slopeX * 0.34 + 0.86 + surface.slopeZ * 0.38) / normalLength), 5);
           const crest = Math.min(1, smoothstep(0.035, 0.3, surface.crest)
             + slopeLight * 0.34 + wakeEnvelope * cursor.energy * 0.38);
-          const readingQuiet = 0.62
-            + smoothstep(0.2, 0.78, Math.abs(projected.x * 2 - 1)) * 0.38;
+          const readingQuiet = 0.34
+            + smoothstep(0.24, 0.76, Math.abs(projected.x * 2 - 1)) * 0.66;
           const depthLight = 0.42 + smoothstep(0.02, 0.88, depth) * 0.58;
           const faceLight = (0.08 + depth * 0.23) * (0.68 + 0.32 / normalLength);
           const alpha = Math.min(0.92,
@@ -543,14 +543,19 @@
 
   function createRenderer() {
     try {
-      return new WebGLParticleOcean(canvas);
+      const webglRenderer = new WebGLParticleOcean(canvas);
+      canvas.dataset.oceanRenderer = 'webgl2';
+      return webglRenderer;
     } catch (error) {
       console.warn('[particle-ocean] WebGL2 unavailable; using the quiet Canvas2D rendering path.', error);
       try {
         const target = canvas.getContext('2d') ? canvas : createFallbackCanvas();
-        return new Canvas2DParticleOcean(target);
+        const canvasRenderer = new Canvas2DParticleOcean(target);
+        canvas.dataset.oceanRenderer = 'canvas2d';
+        return canvasRenderer;
       } catch (fallbackError) {
         console.warn('[particle-ocean] Rendering disabled.', fallbackError);
+        canvas.dataset.oceanRenderer = 'none';
         return null;
       }
     }

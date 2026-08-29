@@ -78,6 +78,10 @@ assert.match(source, /worldPosition[\s\S]*viewZ[\s\S]*projected/,
   'the particle grid must be projected from world space through camera depth');
 assert.match(source, /surfaceSample\.slope/,
   'particle light must respond to surface slope');
+assert.match(source, /readingQuiet\s*=\s*mix\(0\.34,\s*1\.0/,
+  'the WebGL field must stay subdued behind the central reading column');
+assert.match(source, /const\s+readingQuiet\s*=\s*0\.34[\s\S]*\*\s*0\.66/,
+  'the Canvas2D fallback must preserve the central reading quiet zone');
 assert.match(source, /phaseWarp/,
   'large wave groups must vary instead of repeating at a fixed interval');
 assert.match(source, /horizontalDisplacement/,
@@ -102,6 +106,10 @@ assert.match(source, /prefers-reduced-motion:\s*reduce/,
   'the controller must provide a static reduced-motion path');
 assert.match(source, /getContext\(['"]2d['"]\)/,
   'a Canvas2D fallback must preserve the experience without WebGL2');
+assert.match(source, /dataset\.oceanRenderer\s*=\s*['"]webgl2['"]/,
+  'the live canvas must expose the active WebGL2 path for visual verification');
+assert.match(source, /dataset\.oceanRenderer\s*=\s*['"]canvas2d['"]/,
+  'the live canvas must expose fallback activation for visual verification');
 
 const context = {
   window: {},
@@ -153,5 +161,11 @@ assert.ok(farProjection.y < nearProjection.y,
   'perspective must place distant water above nearby water');
 assert.ok(farProjection.perspectiveScale < nearProjection.perspectiveScale,
   'nearby particles must receive stronger perspective scale');
+
+const flatSurface = { x: 0, height: 0, z: 0, slopeX: 0, slopeZ: 0, crest: 0 };
+const narrowLeft = projectOceanPoint(0, 0.55, flatSurface, 1, 390 / 844);
+const narrowRight = projectOceanPoint(1, 0.55, flatSurface, 1, 390 / 844);
+assert.ok(narrowLeft.x < 0 && narrowRight.x > 1,
+  'camera overscan must cover both edges of a narrow viewport');
 
 console.log('PASS: particle ocean route and interaction contracts');
