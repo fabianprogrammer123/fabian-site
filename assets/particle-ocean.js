@@ -18,6 +18,20 @@
   const GRID_MOBILE_Y = 140;
   const MOBILE_BREAKPOINT = 720;
   const MAX_PIXEL_RATIO = 2;
+  const CAMERA_HEIGHT = 2.8;
+  const CAMERA_PITCH = 0.36;
+  const TAN_HALF_FOV = 0.68;
+  const OCEAN_NEAR = 1.55;
+  const OCEAN_FAR = 24;
+  const OCEAN_OVERSCAN = 1.12;
+
+  const OBLIQUE_WAVES = [
+    [0.91, 0.414, 0.52, 0.31, 0.74, 0.72, 0.62],
+    [-0.76, 0.65, 0.76, -0.24, 0.38, 0.46, 2.1],
+    [0.58, -0.815, 1.22, 0.44, 0.24, 0.31, 4.0],
+    [-0.93, -0.368, 2.15, -0.67, 0.12, 0.16, 1.2],
+    [0.33, 0.944, 3.7, 0.93, 0.055, 0.08, 5.0]
+  ];
 
   function normalizeScroll(scrollY, documentHeight, viewportHeight) {
     const range = Math.max(0, documentHeight - viewportHeight);
@@ -32,31 +46,82 @@
 
   function choppyWaveProfile(phase) {
     const fundamental = Math.sin(phase);
+    const crestBase = Math.max(0, fundamental * 0.5 + 0.5);
     return fundamental
       + Math.sin(phase * 2 - 0.52) * 0.31
       + Math.sin(phase * 3 - 1.08) * 0.095
-      + Math.pow(Math.max(0, fundamental * 0.5 + 0.5), 9) * 0.22;
+      + Math.pow(crestBase, 9) * 0.22;
   }
 
-  function sampleChoppySurface(fieldX, fieldY, time) {
-    const phaseWarp = Math.sin(fieldX * 0.31 + time * 0.09) * 0.55
-      + Math.sin(fieldX * 0.13 - fieldY * 0.17 - time * 0.055) * 0.32;
-    const primaryGroup = 0.98 + Math.sin(fieldX * 0.19 - fieldY * 0.11 + time * 0.075 + 0.2) * 0.2;
-    const supportingGroup = 0.98 + Math.sin(fieldX * 0.19 - fieldY * 0.11 + time * 0.075 + 2.3) * 0.2;
-    const primary = choppyWaveProfile((fieldX * 0.14 + fieldY * 0.99015) * 0.96 + time * 0.29 + 0.2 + phaseWarp)
-      * 0.48 * primaryGroup;
-    const supporting = choppyWaveProfile((fieldX * -0.16 + fieldY * 0.987) * 1.48 + time * 0.38 + 2.3 + phaseWarp * 0.48)
-      * 0.26 * supportingGroup;
-    const crossing = choppyWaveProfile((fieldX * 0.48 + fieldY * 0.877) * 2.15 + time * 0.52 + 4.1 + phaseWarp * 0.27)
-      * 0.18;
-    const chop = choppyWaveProfile((fieldX * -0.62 + fieldY * 0.785) * 3.45 + time * 0.78 + 1.4 + phaseWarp * 0.12)
-      * 0.105;
-    const fine = choppyWaveProfile((fieldX * 0.72 + fieldY * 0.694) * 5.65 + time * 1.08 + 5.2)
-      * 0.05;
-    return primary + supporting + crossing + chop + fine;
+  function choppyWaveDerivative(phase) {
+    const fundamental = Math.sin(phase);
+    const crestBase = Math.max(0, fundamental * 0.5 + 0.5);
+    const crestDerivative = crestBase > 0
+      ? 4.5 * Math.pow(crestBase, 8) * Math.cos(phase)
+      : 0;
+    return Math.cos(phase)
+      + Math.cos(phase * 2 - 0.52) * 0.62
+      + Math.cos(phase * 3 - 1.08) * 0.285
+      + crestDerivative * 0.22;
   }
 
-  window.ParticleOceanModel = { normalizeScroll, sampleChoppySurface };
+  function sampleObliqueSurface(worldX, worldZ, time) {
+    const phaseWarp = Math.sin(worldX * 0.11 + worldZ * 0.06 + time * 0.07) * 0.47
+      + Math.sin(worldX * 0.07 - worldZ * 0.14 - time * 0.045) * 0.26;
+    const sample = { x: 0, height: 0, z: 0, slopeX: 0, slopeZ: 0, crest: 0 };
+
+    for (let index = 0; index < OBLIQUE_WAVES.length; index += 1) {
+      const [directionX, directionZ, frequency, speed, amplitude, steepness, offset] = OBLIQUE_WAVES[index];
+      const warpStrength = [1, 0.62, 0.34, 0.16, 0][index];
+      const phase = (worldX * directionX + worldZ * directionZ) * frequency
+        + time * speed + offset + phaseWarp * warpStrength;
+      const group = 0.98 + Math.sin(worldX * 0.075 - worldZ * 0.052 + time * 0.055 + offset) * 0.18;
+      const profile = choppyWaveProfile(phase);
+      const horizontal = Math.cos(phase) * amplitude * steepness * group;
+      const slope = choppyWaveDerivative(phase) * amplitude * group * frequency;
+      const crestBase = Math.max(0, Math.sin(phase) * 0.5 + 0.5);
+
+      sample.x += directionX * horizontal;
+      sample.height += profile * amplitude * group;
+      sample.z += directionZ * horizontal;
+      sample.slopeX += directionX * slope;
+      sample.slopeZ += directionZ * slope;
+      sample.crest += Math.pow(crestBase, 9) * amplitude * group;
+    }
+
+    return sample;
+  }
+
+  function projectOceanPoint(u, rawDepth, sample, scroll, aspect) {
+    const depth = Math.pow(Math.min(1, Math.max(0, rawDepth)), 0.78);
+    const baseDepth = OCEAN_FAR + (OCEAN_NEAR - OCEAN_FAR) * depth;
+    const safeAspect = Math.max(0.45, aspect || 1);
+    const sinPitch = Math.sin(CAMERA_PITCH);
+    const cosPitch = Math.cos(CAMERA_PITCH);
+    const baseViewDepth = sinPitch * CAMERA_HEIGHT + cosPitch * baseDepth;
+    const halfWidth = baseViewDepth * TAN_HALF_FOV * safeAspect * OCEAN_OVERSCAN;
+    const waveScale = 0.72 + Math.min(1, Math.max(0, scroll)) * 0.42;
+    const worldX = (u - 0.5) * 2 * halfWidth + sample.x * waveScale;
+    const worldY = sample.height * waveScale;
+    const worldZ = Math.max(0.55, baseDepth + sample.z * waveScale);
+    const relativeY = worldY - CAMERA_HEIGHT;
+    const viewY = cosPitch * relativeY + sinPitch * worldZ;
+    const viewZ = Math.max(0.35, -sinPitch * relativeY + cosPitch * worldZ);
+    const clipX = worldX / (viewZ * TAN_HALF_FOV * safeAspect);
+    const clipY = viewY / (viewZ * TAN_HALF_FOV);
+
+    return {
+      x: 0.5 + clipX * 0.5,
+      y: 0.5 - clipY * 0.5,
+      perspectiveScale: 1 / viewZ,
+      viewDepth: viewZ,
+      worldX,
+      worldZ,
+      depth
+    };
+  }
+
+  window.ParticleOceanModel = { normalizeScroll, sampleObliqueSurface, projectOceanPoint };
 
   const initialCanvas = document.getElementById('particle-ocean');
   if (!initialCanvas) return;
@@ -95,12 +160,25 @@
     uniform float uTime;
     uniform float uScroll;
     uniform float uPixelRatio;
+    uniform float uAspect;
 
     out float vAlpha;
     out float vCrest;
     out float vDepth;
 
-    const vec2 DOMINANT_WAVE_DIRECTION = vec2(0.14, 0.99015);
+    const float CAMERA_HEIGHT = 2.8;
+    const float CAMERA_PITCH = 0.36;
+    const float TAN_HALF_FOV = 0.68;
+    const float OCEAN_NEAR = 1.55;
+    const float OCEAN_FAR = 24.0;
+    const float OCEAN_OVERSCAN = 1.12;
+    const vec2 PRIMARY_SWELL_DIRECTION = normalize(vec2(0.91, 0.414));
+
+    struct OceanSample {
+      vec3 displacement;
+      vec2 slope;
+      float crest;
+    };
 
     vec4 choppyWave(
       vec2 point,
@@ -110,29 +188,59 @@
       float phaseOffset,
       float amplitude,
       float steepness,
-      float phaseWarp
+      float phaseWarp,
+      out vec2 slope
     ) {
       float phase = dot(point, direction) * frequency + uTime * speed + phaseOffset + phaseWarp;
       float fundamental = sin(phase);
+      float crestBase = max(0.0, fundamental * 0.5 + 0.5);
       float profile = fundamental
         + sin(phase * 2.0 - 0.52) * 0.31
         + sin(phase * 3.0 - 1.08) * 0.095;
-      float crest = pow(max(0.0, fundamental * 0.5 + 0.5), 9.0);
-      float group = mix(0.78, 1.18, smoothstep(-1.0, 1.0,
-        sin(point.x * 0.19 - point.y * 0.11 + uTime * 0.075 + phaseOffset)));
+      float crest = pow(crestBase, 9.0);
+      float crestDerivative = crestBase > 0.0
+        ? 4.5 * pow(crestBase, 8.0) * cos(phase)
+        : 0.0;
+      float profileDerivative = cos(phase)
+        + cos(phase * 2.0 - 0.52) * 0.62
+        + cos(phase * 3.0 - 1.08) * 0.285
+        + crestDerivative * 0.22;
+      float group = 0.98
+        + sin(point.x * 0.075 - point.y * 0.052 + uTime * 0.055 + phaseOffset) * 0.18;
       float height = (profile + crest * 0.22) * amplitude * group;
       vec2 horizontalDisplacement = direction * cos(phase) * amplitude * steepness * group;
+      slope = direction * frequency * profileDerivative * amplitude * group;
       return vec4(horizontalDisplacement.x, height, horizontalDisplacement.y, crest * amplitude * group);
     }
 
-    vec4 oceanSurface(vec2 point) {
-      float phaseWarp = sin(point.x * 0.31 + uTime * 0.09) * 0.55
-        + sin(point.x * 0.13 - point.y * 0.17 - uTime * 0.055) * 0.32;
-      vec4 surface = choppyWave(point, DOMINANT_WAVE_DIRECTION, 0.96, 0.29, 0.2, 0.48, 0.50, phaseWarp);
-      surface += choppyWave(point, normalize(vec2(-0.16, 0.987)), 1.48, 0.38, 2.3, 0.26, 0.36, phaseWarp * 0.48);
-      surface += choppyWave(point, normalize(vec2(0.48, 0.877)), 2.15, 0.52, 4.1, 0.18, 0.25, phaseWarp * 0.27);
-      surface += choppyWave(point, normalize(vec2(-0.62, 0.785)), 3.45, 0.78, 1.4, 0.105, 0.14, phaseWarp * 0.12);
-      surface += choppyWave(point, normalize(vec2(0.72, 0.694)), 5.65, 1.08, 5.2, 0.05, 0.08, 0.0);
+    OceanSample oceanSurface(vec2 point) {
+      float phaseWarp = sin(point.x * 0.11 + point.y * 0.06 + uTime * 0.07) * 0.47
+        + sin(point.x * 0.07 - point.y * 0.14 - uTime * 0.045) * 0.26;
+      OceanSample surface;
+      surface.displacement = vec3(0.0);
+      surface.slope = vec2(0.0);
+      surface.crest = 0.0;
+      vec2 waveSlope;
+      vec4 wave = choppyWave(point, PRIMARY_SWELL_DIRECTION, 0.52, 0.31, 0.62, 0.74, 0.72, phaseWarp, waveSlope);
+      surface.displacement += wave.xyz;
+      surface.slope += waveSlope;
+      surface.crest += wave.w;
+      wave = choppyWave(point, normalize(vec2(-0.76, 0.65)), 0.76, -0.24, 2.1, 0.38, 0.46, phaseWarp * 0.62, waveSlope);
+      surface.displacement += wave.xyz;
+      surface.slope += waveSlope;
+      surface.crest += wave.w;
+      wave = choppyWave(point, normalize(vec2(0.58, -0.815)), 1.22, 0.44, 4.0, 0.24, 0.31, phaseWarp * 0.34, waveSlope);
+      surface.displacement += wave.xyz;
+      surface.slope += waveSlope;
+      surface.crest += wave.w;
+      wave = choppyWave(point, normalize(vec2(-0.93, -0.368)), 2.15, -0.67, 1.2, 0.12, 0.16, phaseWarp * 0.16, waveSlope);
+      surface.displacement += wave.xyz;
+      surface.slope += waveSlope;
+      surface.crest += wave.w;
+      wave = choppyWave(point, normalize(vec2(0.33, 0.944)), 3.7, 0.93, 5.0, 0.055, 0.08, 0.0, waveSlope);
+      surface.displacement += wave.xyz;
+      surface.slope += waveSlope;
+      surface.crest += wave.w;
       return surface;
     }
 
@@ -141,48 +249,72 @@
       float column = mod(id, uGrid.x);
       float row = floor(id / uGrid.x);
       vec2 uv = vec2(column, row) / max(vec2(1.0), uGrid - 1.0);
-      float depth = pow(uv.y, 0.82);
+      float depth = pow(uv.y, 0.78);
+      float worldDepth = mix(OCEAN_FAR, OCEAN_NEAR, depth);
+      float sinPitch = sin(CAMERA_PITCH);
+      float cosPitch = cos(CAMERA_PITCH);
+      float baseViewDepth = sinPitch * CAMERA_HEIGHT + cosPitch * worldDepth;
+      float halfWidth = baseViewDepth * TAN_HALF_FOV * uAspect * OCEAN_OVERSCAN;
+      vec3 worldPosition = vec3((uv.x - 0.5) * 2.0 * halfWidth, 0.0, worldDepth);
+      OceanSample surfaceSample = oceanSurface(worldPosition.xz);
 
-      vec2 field = vec2(mix(-7.2, 7.2, uv.x), mix(10.4, -2.7, depth));
-      vec4 surfaceSample = oceanSurface(field);
-
-      float pointerDepth = clamp((uPointer.y - 0.22) / 0.78, 0.0, 1.0);
-      vec2 wakeDelta = vec2((uv.x - uPointer.x) * 1.62, depth - pointerDepth);
+      float pointerRawDepth = clamp((uPointer.y - 0.18) / 0.82, 0.0, 1.0);
+      float pointerDepth = pow(pointerRawDepth, 0.78);
+      float pointerWorldDepth = mix(OCEAN_FAR, OCEAN_NEAR, pointerDepth);
+      float pointerViewDepth = sinPitch * CAMERA_HEIGHT + cosPitch * pointerWorldDepth;
+      float pointerHalfWidth = pointerViewDepth * TAN_HALF_FOV * uAspect * OCEAN_OVERSCAN;
+      float pointerWorldX = (uPointer.x - 0.5) * 2.0 * pointerHalfWidth;
+      vec2 wakeDelta = vec2(
+        (worldPosition.x - pointerWorldX) * 0.34,
+        (worldPosition.z - pointerWorldDepth) * 0.52
+      );
       float wakeDistance = length(wakeDelta);
-      float wakeEnvelope = exp(-wakeDistance * 8.4) * smoothstep(0.03, 0.22, depth);
-      float wakeRing = sin(wakeDistance * 52.0 - uTime * 5.4);
+      float wakeEnvelope = exp(-wakeDistance * 1.42) * smoothstep(0.02, 0.24, depth);
+      float wakeRing = sin(wakeDistance * 7.8 - uTime * 4.2);
       float wake = wakeRing * wakeEnvelope * uPointerEnergy;
 
-      float waveScale = mix(0.74, 1.12, uScroll);
-      float height = surfaceSample.y * waveScale + wake * 0.54;
-      float displacedDepth = clamp(depth + surfaceSample.z * mix(0.004, 0.038, depth), 0.0, 1.08);
-      float horizon = mix(0.53, 0.60, uScroll);
-      float projectedY = mix(horizon, -1.12, displacedDepth);
-      projectedY += height * mix(0.018, 0.18, displacedDepth);
+      float waveScale = mix(0.72, 1.14, uScroll);
+      worldPosition += surfaceSample.displacement * waveScale;
+      worldPosition.y += wake * 0.46;
 
-      float spread = mix(0.56, 1.34, pow(depth, 0.72));
-      float horizontalDisplacement = surfaceSample.x * mix(0.004, 0.052, displacedDepth);
-      float projectedX = (uv.x - 0.5) * 2.0 * spread + horizontalDisplacement;
-      projectedX += (uPointer.x - 0.5) * uPointerEnergy * 0.012 * depth;
+      vec3 relative = worldPosition - vec3(0.0, CAMERA_HEIGHT, 0.0);
+      float viewY = cosPitch * relative.y + sinPitch * relative.z;
+      float viewZ = max(0.35, -sinPitch * relative.y + cosPitch * relative.z);
+      vec2 projected = vec2(
+        relative.x / (viewZ * TAN_HALF_FOV * uAspect),
+        viewY / (viewZ * TAN_HALF_FOV)
+      );
 
-      float slopeLight = smoothstep(0.045, 0.28, length(surfaceSample.xz));
-      float crestBreakup = smoothstep(-0.42, 0.82,
-        sin(field.x * 1.43 + sin(field.y * 0.37) + uTime * 0.24)
-        + sin(field.x * 3.17 - field.y * 0.29 - uTime * 0.18) * 0.34);
-      float crest = smoothstep(0.022, 0.165, surfaceSample.w) * mix(0.58, 1.0, crestBreakup);
-      crest += slopeLight * crest * 0.10;
-      crest += wakeEnvelope * uPointerEnergy * 0.45;
+      vec3 surfaceNormal = normalize(vec3(
+        -surfaceSample.slope.x * waveScale,
+        1.0,
+        -surfaceSample.slope.y * waveScale
+      ));
+      vec3 lightDirection = normalize(vec3(-0.34, 0.86, -0.38));
+      float slopeLight = pow(max(0.0, dot(surfaceNormal, lightDirection)), 5.0);
+      float grazingLight = pow(1.0 - abs(dot(surfaceNormal,
+        normalize(vec3(-worldPosition.x, CAMERA_HEIGHT - worldPosition.y, -worldPosition.z)))), 3.0);
+      float crestBreakup = smoothstep(-0.56, 0.76,
+        sin(worldPosition.x * 0.63 + worldPosition.z * 0.18 + uTime * 0.17)
+        + sin(worldPosition.x * 1.71 - worldPosition.z * 0.11 - uTime * 0.13) * 0.32);
+      float crest = smoothstep(0.035, 0.30, surfaceSample.crest) * mix(0.56, 1.0, crestBreakup);
+      crest += slopeLight * 0.34 + grazingLight * crest * 0.18;
+      crest += wakeEnvelope * uPointerEnergy * 0.38;
       crest = clamp(crest, 0.0, 1.0);
       float reveal = mix(0.012, 1.0, smoothstep(0.02, 0.50, uScroll));
-      float horizonFade = smoothstep(0.0, 0.075, uv.y);
-      float readingQuiet = mix(0.62, 1.0, smoothstep(0.22, 0.72, abs(projectedX)));
-      float faceLight = mix(0.14, 0.48, depth);
+      float horizonFade = smoothstep(0.0, 0.055, uv.y);
+      float readingQuiet = mix(0.62, 1.0, smoothstep(0.20, 0.78, abs(projected.x)));
+      float depthLight = mix(0.42, 1.0, smoothstep(0.02, 0.88, depth));
+      float faceLight = mix(0.08, 0.31, depth) * mix(0.68, 1.0, surfaceNormal.y);
+      float perspectiveScale = clamp(1.0 / viewZ, 0.03, 0.72);
 
-      vAlpha = reveal * horizonFade * readingQuiet * (0.012 + faceLight * 0.22 + crest * 0.78);
+      vAlpha = reveal * horizonFade * readingQuiet * depthLight
+        * (0.012 + faceLight + crest * 0.76);
       vCrest = crest;
       vDepth = depth;
-      gl_PointSize = min(5.6, (mix(0.46, 1.35, depth) + crest * 1.55 + wakeEnvelope * uPointerEnergy * 0.72) * uPixelRatio);
-      gl_Position = vec4(projectedX, projectedY, 0.0, 1.0);
+      gl_PointSize = min(6.2, (0.44 + perspectiveScale * 2.05 + crest * 1.58
+        + wakeEnvelope * uPointerEnergy * 0.62) * uPixelRatio);
+      gl_Position = vec4(projected, 0.0, 1.0);
     }
   `;
 
@@ -245,7 +377,8 @@
         pointerEnergy: gl.getUniformLocation(this.program, 'uPointerEnergy'),
         time: gl.getUniformLocation(this.program, 'uTime'),
         scroll: gl.getUniformLocation(this.program, 'uScroll'),
-        pixelRatio: gl.getUniformLocation(this.program, 'uPixelRatio')
+        pixelRatio: gl.getUniformLocation(this.program, 'uPixelRatio'),
+        aspect: gl.getUniformLocation(this.program, 'uAspect')
       };
 
       gl.disable(gl.DEPTH_TEST);
@@ -273,6 +406,7 @@
       this.gridX = isMobile ? GRID_MOBILE_X : GRID_DESKTOP_X;
       this.gridY = isMobile ? GRID_MOBILE_Y : GRID_DESKTOP_Y;
       this.pixelRatio = Math.min(MAX_PIXEL_RATIO, window.devicePixelRatio || 1);
+      this.aspect = Math.max(0.45, window.innerWidth / Math.max(1, window.innerHeight));
       const width = Math.max(1, Math.round(window.innerWidth * this.pixelRatio));
       const height = Math.max(1, Math.round(window.innerHeight * this.pixelRatio));
       if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -293,6 +427,7 @@
       gl.uniform1f(this.uniforms.time, time);
       gl.uniform1f(this.uniforms.scroll, scroll);
       gl.uniform1f(this.uniforms.pixelRatio, this.pixelRatio);
+      gl.uniform1f(this.uniforms.aspect, this.aspect);
       gl.drawArrays(gl.POINTS, 0, this.gridX * this.gridY);
     }
 
@@ -328,36 +463,54 @@
       const columns = mobile ? 92 : 148;
       const rows = mobile ? 58 : 82;
       const reveal = 0.012 + smoothstep(0.02, 0.5, scroll) * 0.988;
+      const aspect = width / Math.max(1, height);
+      const pointerRawDepth = Math.min(1, Math.max(0, (cursor.y - 0.18) / 0.82));
+      const pointerDepth = Math.pow(pointerRawDepth, 0.78);
+      const pointerWorldDepth = OCEAN_FAR + (OCEAN_NEAR - OCEAN_FAR) * pointerDepth;
+      const pointerBaseViewDepth = Math.sin(CAMERA_PITCH) * CAMERA_HEIGHT
+        + Math.cos(CAMERA_PITCH) * pointerWorldDepth;
+      const pointerHalfWidth = pointerBaseViewDepth * TAN_HALF_FOV * aspect * OCEAN_OVERSCAN;
+      const pointerWorldX = (cursor.x - 0.5) * 2 * pointerHalfWidth;
       context.clearRect(0, 0, width, height);
       context.globalCompositeOperation = 'lighter';
 
       for (let row = 0; row < rows; row += 1) {
         const rawDepth = row / Math.max(1, rows - 1);
-        const depth = Math.pow(rawDepth, 0.82);
-        const horizon = height * (0.205 - scroll * 0.035);
-        const baseY = horizon + depth * height * 0.84;
-        const spread = 0.56 + Math.pow(depth, 0.72) * 0.78;
+        const depth = Math.pow(rawDepth, 0.78);
+        const worldDepth = OCEAN_FAR + (OCEAN_NEAR - OCEAN_FAR) * depth;
+        const baseViewDepth = Math.sin(CAMERA_PITCH) * CAMERA_HEIGHT
+          + Math.cos(CAMERA_PITCH) * worldDepth;
+        const halfWidth = baseViewDepth * TAN_HALF_FOV * aspect * OCEAN_OVERSCAN;
 
         for (let column = 0; column < columns; column += 1) {
           const u = column / Math.max(1, columns - 1);
-          const fieldX = (u - 0.5) * 2 * spread;
-          const fieldY = 10.4 + (-2.7 - 10.4) * depth;
-          const surface = sampleChoppySurface(fieldX * 7.2, fieldY, time);
-          const pointerDepth = Math.min(1, Math.max(0, (cursor.y - 0.22) / 0.78));
-          const dx = (u - cursor.x) * 1.62;
-          const dy = depth - pointerDepth;
-          const distance = Math.hypot(dx, dy);
-          const wakeEnvelope = Math.exp(-distance * 8.4) * smoothstep(0.03, 0.22, depth);
-          const wake = Math.sin(distance * 52 - time * 5.4) * wakeEnvelope * cursor.energy;
-          const wave = surface * (0.74 + scroll * 0.38) + wake * 0.54;
-          const x = width * (0.5 + fieldX * 0.5);
-          const y = baseY - wave * height * (0.009 + depth * 0.081);
+          const worldX = (u - 0.5) * 2 * halfWidth;
+          const surface = sampleObliqueSurface(worldX, worldDepth, time);
+          const wakeDistance = Math.hypot(
+            (worldX - pointerWorldX) * 0.34,
+            (worldDepth - pointerWorldDepth) * 0.52
+          );
+          const wakeEnvelope = Math.exp(-wakeDistance * 1.42) * smoothstep(0.02, 0.24, depth);
+          const wake = Math.sin(wakeDistance * 7.8 - time * 4.2) * wakeEnvelope * cursor.energy;
+          surface.height += wake * 0.46;
+          const projected = projectOceanPoint(u, rawDepth, surface, scroll, aspect);
+          const x = projected.x * width;
+          const y = projected.y * height;
           if (x < -4 || x > width + 4 || y < -4 || y > height + 4) continue;
 
-          const crest = smoothstep(0.28, 0.82, wave + depth * 0.02);
-          const readingQuiet = 0.62 + smoothstep(0.22, 0.72, Math.abs(fieldX)) * 0.38;
-          const alpha = Math.min(0.92, reveal * readingQuiet * (0.014 + depth * 0.08 + crest * 0.7));
-          const radius = 0.25 + depth * 0.5 + crest * 0.5;
+          const normalLength = Math.hypot(surface.slopeX, 1, surface.slopeZ);
+          const slopeLight = Math.pow(Math.max(0,
+            (surface.slopeX * 0.34 + 0.86 + surface.slopeZ * 0.38) / normalLength), 5);
+          const crest = Math.min(1, smoothstep(0.035, 0.3, surface.crest)
+            + slopeLight * 0.34 + wakeEnvelope * cursor.energy * 0.38);
+          const readingQuiet = 0.62
+            + smoothstep(0.2, 0.78, Math.abs(projected.x * 2 - 1)) * 0.38;
+          const depthLight = 0.42 + smoothstep(0.02, 0.88, depth) * 0.58;
+          const faceLight = (0.08 + depth * 0.23) * (0.68 + 0.32 / normalLength);
+          const alpha = Math.min(0.92,
+            reveal * readingQuiet * depthLight * (0.012 + faceLight + crest * 0.76));
+          const perspectiveSize = smoothstep(0.035, 0.42, projected.perspectiveScale);
+          const radius = 0.22 + perspectiveSize * 0.56 + crest * 0.46;
           context.beginPath();
           context.fillStyle = `rgba(${Math.round(177 + crest * 60)}, ${Math.round(190 + crest * 54)}, ${Math.round(197 + crest * 58)}, ${alpha})`;
           context.arc(x, y, radius, 0, Math.PI * 2);
