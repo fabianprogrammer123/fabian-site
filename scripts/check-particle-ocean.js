@@ -14,10 +14,13 @@ const controllerPath = path.join(root, 'assets', 'particle-ocean.js');
 const discardedControllerPath = path.join(root, 'assets', 'water-finale.js');
 const homepage = fs.readFileSync(homepagePath, 'utf8');
 
-assert.doesNotMatch(homepage, /particle-ocean|particle-ocean\.js/,
-  'the production homepage must remain independent from the experimental ocean');
+assert.match(homepage,
+  /<canvas[^>]+id="particle-ocean"[^>]+class="particle-ocean"[^>]+aria-hidden="true"/,
+  'the production homepage must carry the approved particle ocean');
+assert.match(homepage, /src="assets\/particle-ocean\.js\?v=6"/,
+  'the production homepage must load the current ocean controller');
 assert.ok(fs.existsSync(oceanPagePath),
-  'the separate experimental homepage must continue to exist');
+  'the water alias must continue to exist');
 assert.ok(fs.existsSync(controllerPath),
   'the particle ocean controller must exist');
 assert.ok(!fs.existsSync(discardedControllerPath),
@@ -32,8 +35,8 @@ assert.match(oceanPage,
   'the experimental route needs one decorative particle-ocean canvas');
 assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js(?:\?v=\d+)?"/,
   'the route must load the focused particle-ocean controller');
-assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=5"/,
-  'the route must cache-bust the corrected perspective wake revision');
+assert.match(oceanPage, /src="\.\.\/assets\/particle-ocean\.js\?v=6"/,
+  'the route must cache-bust the visible-at-top homepage revision');
 assert.doesNotMatch(oceanPage,
   /water-finale|water-screen|water-spray|water-nozzle|water-sprayer|spraying|draining/,
   'the discarded character and rising-water finale must be completely removed');
@@ -116,8 +119,10 @@ assert.doesNotMatch(source,
   'Canvas2D must not repeat screen-to-world node mapping per particle');
 assert.match(source, /TOP_OCEAN_REVEAL\s*=\s*0\.\d*[1-9]/,
   'particles must have a subtle nonzero reveal at scroll zero');
-assert.match(source, /TOP_OCEAN_EXPOSURE\s*=\s*0\.0[0-9]*[1-9]/,
-  'the white page must expose enough contrast for a faint top ocean');
+assert.match(source, /TOP_OCEAN_REVEAL\s*=\s*0\.1[4-8]/,
+  'top-page particles must be present without competing with the text');
+assert.match(source, /TOP_OCEAN_EXPOSURE\s*=\s*0\.02[0-9]/,
+  'the white page must expose a slightly visible top ocean');
 assert.match(source,
   /scroll\s*<\s*TOP_BLEND_PROGRESS[\s\S]{0,180}blendFunc\(gl\.SRC_ALPHA,\s*gl\.ONE_MINUS_SRC_ALPHA\)/,
   'WebGL must use neutral alpha near the top so silver particles remain visible on white');
@@ -244,8 +249,8 @@ assert.ok(WAKE_EMIT_DISTANCE > 0 && WAKE_EMIT_DISTANCE < 0.05,
   'the wake model must publish a meaningful normalized emission threshold');
 assert.ok(WAKE_LIFETIME >= 1.4 && WAKE_LIFETIME <= 2,
   'wake nodes must have a deterministic 1.4 to 2 second lifetime');
-assert.ok(TOP_OCEAN_REVEAL >= 0.06 && TOP_OCEAN_REVEAL <= 0.12,
-  'top-page particles must be discoverable without overpowering the white page');
+assert.ok(TOP_OCEAN_REVEAL >= 0.14 && TOP_OCEAN_REVEAL <= 0.18,
+  'top-page particles must be clearly discoverable without overpowering the white page');
 assert.ok(CAMERA_HEIGHT >= 3.2 && CAMERA_HEIGHT <= 4,
   'the camera must pull back above the water for a wider composition');
 assert.ok(CAMERA_PITCH >= 0.34 && CAMERA_PITCH <= 0.44,

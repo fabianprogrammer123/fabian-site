@@ -24,20 +24,20 @@ Visitors read a single long-scrolling page on desktop or mobile, use the fixed s
 
 ## Capabilities and Constraints
 
-- The production homepage at `/` must remain independent from experimental variants.
-- The experimental route is plain HTML, CSS, and JavaScript with no required build step.
+- The production homepage at `/` uses the approved particle-ocean experience, with `/water/` kept as a stable alias.
+- The experience is plain HTML, CSS, and JavaScript with no required build step.
 - Existing copy, links, semantic structure, and the portrait voice-agent interaction remain unchanged.
 - Decorative rendering must never intercept pointer or keyboard input.
 - The experience needs bounded desktop and mobile GPU budgets, a non-WebGL fallback, and reduced-motion behavior.
 
 ## Brand Commitments
 
-Fabian's name, direct lowercase section labels, compact monospace typography, and quiet editorial structure are established. For the experimental route, the user explicitly selected the monochrome particle-ocean language of the vGPU FFT ocean example as the binding motion reference.
+Fabian's name, direct lowercase section labels, compact monospace typography, and quiet editorial structure are established. The user explicitly selected the monochrome particle-ocean language of the vGPU FFT ocean example as the binding motion reference for the homepage.
 
 ## Evidence on Hand
 
 - Homepage content and navigation: `index.html`
-- Experimental route: `water/index.html`
+- Stable ocean alias: `water/index.html`
 - Portrait interaction: inline homepage canvas code and `assets/homepage-navigation.js`
 - Public profile and article links embedded in the page
 
@@ -47,6 +47,5 @@ No testimonials, commercial claims, customer logos, or performance claims should
 
 - Content remains legible and useful before spectacle.
 - One authored interactive moment is more valuable than scattered decoration.
-- Experimental visuals must feel native to the sparse personal site.
+- The ocean must feel native to the sparse personal site and remain gently visible even at scroll zero.
 - Motion stays responsive, reversible, and considerate of constrained devices.
-

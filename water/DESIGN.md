@@ -6,7 +6,7 @@ This system applies only to the experimental `/water/` homepage variant. The pro
 
 ## Thesis
 
-The page begins as Fabian's familiar white editorial document and gradually reveals a neutral-black, luminous particle ocean beneath it. The visual is not a footer event or an illustration: it is a persistent atmospheric field whose exposure, depth, and energy are authored by scroll.
+The homepage begins as Fabian's familiar white editorial document with a subtle, already-visible field of waves, then gradually reveals a neutral-black, luminous particle ocean beneath it. The visual is not a footer event or an illustration: it is a persistent atmospheric field whose exposure, depth, and energy are authored by scroll. `/water/` remains a stable alias of this production experience.
 
 ## Palette
 

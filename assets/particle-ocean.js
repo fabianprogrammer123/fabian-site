@@ -32,8 +32,8 @@
   const WAKE_LIFETIME = 1.72;
   const WAKE_DRIFT_SPEED = 0.075;
   const WAKE_VELOCITY_DAMPING = 2.2;
-  const TOP_OCEAN_REVEAL = 0.11;
-  const TOP_OCEAN_EXPOSURE = 0.012;
+  const TOP_OCEAN_REVEAL = 0.16;
+  const TOP_OCEAN_EXPOSURE = 0.024;
   const TOP_BLEND_PROGRESS = 0.08;
   const FALLBACK_DESKTOP_X = 128;
   const FALLBACK_DESKTOP_Y = 70;
@@ -696,7 +696,7 @@
       crest += slopeLight * 0.34 + grazingLight * crest * 0.18;
       crest += wakeHighlight * (0.10 + uPointerEnergy * 0.025);
       crest = clamp(crest, 0.0, 1.0);
-      float reveal = mix(0.11, 1.0, smoothstep(0.02, 0.50, uScroll));
+      float reveal = mix(0.16, 1.0, smoothstep(0.02, 0.50, uScroll));
       float horizonFade = smoothstep(0.0, 0.055, uv.y);
       float horizonTrace = (1.0 - smoothstep(0.0, 0.14, uv.y)) * crest * 0.085;
       float readingQuiet = mix(0.34, 1.0, smoothstep(0.24, 0.76, abs(projected.x)));
