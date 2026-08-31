@@ -6,6 +6,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 home="$root/index.html"
 water="$root/water/index.html"
 nav="$root/assets/homepage-navigation.js"
+favicon="$root/favicon.svg"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -28,9 +29,22 @@ forbid_text() {
 
 test -f "$home" || fail "missing index.html"
 test -f "$water" || fail "missing water/index.html"
+test -f "$favicon" || fail "missing favicon.svg"
 test ! -e "$root/CV.pdf" || fail "CV.pdf is still publicly shipped"
 forbid_text "$home" 'CV.pdf'
 forbid_text "$home" '>cv<'
+
+for page in \
+  "$home" \
+  "$water" \
+  "$root/ai-adoption/index.html" \
+  "$root/fine-tuned-open-source-models/index.html"; do
+  require_text "$page" '<link rel="icon" href="/favicon.svg" type="image/svg+xml">'
+  forbid_text "$page" 'href="data:,"'
+done
+
+require_text "$favicon" 'viewBox="0 0 64 64"'
+require_text "$favicon" '<title>Fabian Hildesheim</title>'
 
 for section in why-this-site now background thoughts; do
   require_text "$home" "href=\"#$section\""
